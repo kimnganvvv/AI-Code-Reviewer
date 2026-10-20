@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# mt
+.env
+
+# Kết quả đo thô 
+benchmark/results/raw/*
+!benchmark/results/raw/.gitkeep
+
+# Hệ điều hành, editor
+.DS_Store
+.vscode/
+.idea/
+node_modules/
