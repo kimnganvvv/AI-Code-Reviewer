@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Code Reviewer</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header>
+    <h1>AI Code Reviewer</h1>
+    <p id="status" class="status">Hãy bôi đen code rồi chuột phải để review.</p>
+  </header>
+
+  <details id="code-box" class="code-box" hidden>
+    <summary>Code đã nhận</summary>
+    <pre id="code"></pre>
+  </details>
+
+  <section class="filters">
+    <label>Mức nghiêm trọng
+      <select id="filter-severity">
+        <option value="all">Tất cả</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </label>
+    <label>Độ tin cậy
+      <select id="filter-confidence">
+        <option value="all">Tất cả</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </label>
+  </section>
+
+  <p id="summary" class="summary"></p>
+  <main id="issues"></main>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
