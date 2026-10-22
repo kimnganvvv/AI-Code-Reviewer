@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Code Reviewer</title>
+<link rel="stylesheet" href="/static/vendor/codemirror.min.css" />
+<link rel="stylesheet" href="/static/vendor/material-darker.min.css" />
+<link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+<header>
+  <h1>AI Code Reviewer</h1>
+  <span id="llmStatus" class="badge">checking...</span>
+  <span class="spacer"></span>
+  <span class="badge">Hybrid SAST (Bandit) + LLM &middot; Single-pass</span>
+</header>
+
+<div class="toolbar">
+  <button id="btnRun" class="primary">Ph&acirc;n t&iacute;ch</button>
+  <button id="btnMock">Dữ liệu mô phỏng</button>
+  <button id="btnSample">Tải ví dụ</button>
+  <span class="spacer"></span>
+  <select id="fType">
+    <option value="">Tất cả loại</option>
+    <option value="security">Security</option>
+    <option value="bug">Bug</option>
+    <option value="quality">Quality</option>
+  </select>
+  <select id="fSeverity">
+    <option value="">Tất cả severity</option>
+    <option value="high">High</option>
+    <option value="medium">Medium</option>
+    <option value="low">Low</option>
+  </select>
+  <select id="fConfidence">
+    <option value="">Tất cả confidence</option>
+    <option value="high">High</option>
+    <option value="medium">Medium</option>
+    <option value="low">Low</option>
+  </select>
+  <button id="btnReset">Bỏ lọc</button>
+</div>
+
+<main>
+  <section class="pane">
+    <div class="pane-head">Code Python &middot; bấm vào 1 dòng để xem lỗi tương ứng</div>
+    <textarea id="editor" spellcheck="false"></textarea>
+  </section>
+  <section class="pane">
+    <div class="pane-head">Kết quả phát hiện lỗi</div>
+    <div id="issues"><div class="empty">Chưa có kết quả. Dán code rồi bấm “Phân tích”.</div></div>
+  </section>
+</main>
+
+<div id="meta">Chưa chạy.</div>
+
+<script src="/static/vendor/codemirror.min.js"></script>
+<script src="/static/vendor/python.min.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
