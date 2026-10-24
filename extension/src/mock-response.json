@@ -1,46 +1,57 @@
 [
   {
-    "line": 3,
+    "line": 5,
     "type": "security",
-    "severity": "medium",
+    "severity": "high",
     "confidence": "high",
     "cwe_id": "CWE-798",
     "message": "Mật khẩu được ghi cứng trong mã nguồn",
-    "explanation": "Biến DB_PASSWORD được gán trực tiếp chuỗi \"admin123\". Bất kỳ ai xem được mã nguồn (kho Git, bản build) đều đọc được mật khẩu. Đây là giá trị hằng, không có luồng dữ liệu nào để làm sạch.",
-    "suggestion": "import os\n\nDB_PASSWORD = os.environ[\"DB_PASSWORD\"]",
+    "explanation": "Biến PASSWORD được gán trực tiếp chuỗi \"admin123\" ở dòng 5. Bất kỳ ai xem được mã nguồn đều đọc được mật khẩu. Đây là giá trị hằng, không có luồng dữ liệu nào để làm sạch.",
+    "suggestion": "import os\n\nPASSWORD = os.environ[\"APP_PASSWORD\"]",
     "source": "bandit"
   },
   {
-    "line": 8,
+    "line": 9,
     "type": "security",
     "severity": "high",
     "confidence": "high",
     "cwe_id": "CWE-89",
     "message": "SQL Injection do ghép chuỗi vào câu truy vấn",
-    "explanation": "Tham số username đi vào f-string ở dòng 8 rồi được truyền thẳng vào cursor.execute ở dòng 9 mà không qua bước làm sạch hay tham số hóa. Kẻ tấn công nhập ' OR '1'='1 để lấy toàn bộ bản ghi. Nguồn: tham số username. Đích: cursor.execute.",
-    "suggestion": "query = \"SELECT * FROM users WHERE name = ?\"\ncursor.execute(query, (username,))",
+    "explanation": "Tham số user_id được nối trực tiếp vào câu SQL ở dòng 9 mà không qua tham số hóa. Kẻ tấn công nhập ' OR '1'='1 để lấy toàn bộ bản ghi. Nguồn: tham số user_id. Đích: conn.execute.",
+    "suggestion": "query = \"SELECT * FROM users WHERE id = ?\"\nconn.execute(query, (user_id,))",
     "source": "both"
   },
   {
-    "line": 16,
+    "line": 14,
+    "type": "security",
+    "severity": "high",
+    "confidence": "high",
+    "cwe_id": "CWE-78",
+    "message": "Command injection qua shell=True",
+    "explanation": "subprocess.call() với shell=True ở dòng 14 truyền chuỗi trực tiếp cho shell, dễ bị Command Injection.",
+    "suggestion": "subprocess.run(cmd.split(), shell=False)",
+    "source": "bandit"
+  },
+  {
+    "line": 18,
     "type": "bug",
     "severity": "medium",
     "confidence": "medium",
     "cwe_id": null,
     "message": "Chia cho 0 khi danh sách rỗng",
-    "explanation": "Nếu scores là danh sách rỗng thì len(scores) bằng 0 và phép chia ở dòng 16 gây ZeroDivisionError. Hàm không kiểm tra độ dài trước khi chia.",
-    "suggestion": "if not scores:\nreturn 0\nreturn total / len(scores)",
+    "explanation": "Nếu values là danh sách rỗng thì len(values) bằng 0 và phép chia ở dòng 18 gây ZeroDivisionError. Hàm không kiểm tra độ dài trước khi chia.",
+    "suggestion": "if not values:\n    return 0\nreturn sum(values) / len(values)",
     "source": "llm"
   },
   {
-    "line": 19,
+    "line": 2,
     "type": "quality",
     "severity": "low",
-    "confidence": "low",
+    "confidence": "medium",
     "cwe_id": null,
-    "message": "Câu lệnh if lồng nhau quá sâu",
-    "explanation": "Hàm process lồng 4 tầng if, làm khó đọc và khó kiểm thử. Có thể gộp điều kiện hoặc dùng early return để giảm độ sâu.",
-    "suggestion": "if mode != \"a\" or not flag or not extra or not data:\nreturn None\nreturn data.upper()",
+    "message": "Import không được sử dụng",
+    "explanation": "sqlite3 được import ở dòng 2 nhưng không dùng trong đoạn mã.",
+    "suggestion": "Xóa dòng import sqlite3",
     "source": "llm"
   }
 ]
