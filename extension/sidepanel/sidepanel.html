@@ -17,6 +17,26 @@
     <pre id="code"></pre>
   </details>
 
+  <section class="input-area">
+    <textarea id="code-input" placeholder="Dán code Python vào đây" spellcheck="false"></textarea>
+    <div class="input-actions">
+      <button id="btn-analyze" type="button">Phân tích</button>
+      <button id="btn-clear" type="button">Xoá</button>
+      <a id="open-web" href="#" target="_blank" rel="noopener">Mở bản đầy đủ trên Web</a>
+    </div>
+  </section>
+
+  <section class="controls">
+    <label>Chế độ review
+      <select id="mode-select">
+        <option value="bandit">Bandit</option>
+        <option value="llm">LLM</option>
+        <option value="hybrid" selected>Hybrid</option>
+      </select>
+    </label>
+    <p id="mode-hint" class="hint" hidden></p>
+  </section>
+
   <section class="filters">
     <label>Mức nghiêm trọng
       <select id="filter-severity">
