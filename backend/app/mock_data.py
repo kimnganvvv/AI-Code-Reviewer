@@ -31,7 +31,7 @@ def total(values):
 def mock_issues() -> List[dict]:
     return [
         {
-            "line": 6,
+            "line": 5,
             "type": "security",
             "severity": "high",
             "confidence": "high",
@@ -42,7 +42,7 @@ def mock_issues() -> List[dict]:
             "source": "bandit",
         },
         {
-            "line": 11,
+            "line": 9,
             "type": "security",
             "severity": "high",
             "confidence": "high",
@@ -53,7 +53,7 @@ def mock_issues() -> List[dict]:
             "source": "both",
         },
         {
-            "line": 15,
+            "line": 14,
             "type": "security",
             "severity": "high",
             "confidence": "high",
@@ -64,7 +64,7 @@ def mock_issues() -> List[dict]:
             "source": "bandit",
         },
         {
-            "line": 19,
+            "line": 18,
             "type": "bug",
             "severity": "medium",
             "confidence": "medium",
@@ -75,7 +75,7 @@ def mock_issues() -> List[dict]:
             "source": "llm",
         },
         {
-            "line": 3,
+            "line": 2,
             "type": "quality",
             "severity": "low",
             "confidence": "medium",

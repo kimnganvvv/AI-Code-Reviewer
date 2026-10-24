@@ -88,5 +88,22 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
 
 - **Chrome Extension (Người 2)**: có thể gọi thẳng `POST /review`. Nếu chưa có key, dùng `mode=bandit`.
 - **Prompt (Người 3)**: không được đổi 10 trường trên. Chỉ được thêm logic trong `prompts.py`.
-- **Phát triển song song**: luôn dùng `/mock/review` khi chưa sẵn sàng cấu hình LLM.
-- **Đo 3 chế độ**: dùng cùng một bộ `samples/`, lần lượt gọi `mode=bandit`, `mode=llm`, `mode=hybrid` để tính Precision / Recall / F1 / FPR / Latency.
+- **Phát triển song song**: luôn dùng `/mock/review` khi chưa sẵn sàng cấu hình LLM. Giúp Người 2 làm Extension và Người 3 tinh chỉnh prompt mà không cần API key.
+- **Đo 3 chế độ**: dùng cùng một bộ `samples/`, lần lượt gọi `mode=bandit`, `mode=llm`, `mode=hybrid` để tính Precision / Recall / F1 / FPR / Latency. Quan trọng: cùng một endpoint `/review?mode=...` có thể chạy 3 thí nghiệm mà không cần deploy lại.
+
+### 5.1 Quy tắc gộp trùng (Merge/Dedup)
+
+Khi cả Bandit và LLM phát hiện cùng 1 lỗi, nếu không gộp thì UI hiện 2 thẻ trùng nhau → user mất niềm tin. Quy tắc ghép (theo thứ tự ưu tiên):
+
+1. **Khác nguồn** (Bandit vs LLM) — mới được gộp:
+   - **Cùng `cwe_id` và lệch dòng ≤ 1** → cùng một lỗi.
+   - **Trùng dòng + trùng `type`** (security/bug) → cùng một lỗi.
+   - **Trùng dòng + ≥ 40% từ khóa chung** trong `message` → cùng một lỗi (fallback).
+2. **Cùng nguồn** — chỉ gộp khi *thực sự là cùng một quy tắc* (cùng `test_id` của Bandit).
+   → Nếu không có điều kiện này, `import subprocess` (B404) và `shell=True` (B602) ở cùng dòng 1 sẽ bị gộp nhầm thành 1 lỗi.
+
+Khi gộp:
+- `source` → `"both"` (chỉ nghĩa rõ ràng: cả 2 nguồn đều xác nhận → đáng tin hơn).
+- Giữ **dòng của Bandit** (static analysis biết chính xác dòng nào).
+- Giữ `explanation`/`message` **dài hơn** (LLM thường chi tiết hơn).
+- `severity` lấy **cao hơn**; `confidence` lấy **cao hơn** (LLM đã kiểm chứng có context → đáng tin hơn cảnh báo thô).

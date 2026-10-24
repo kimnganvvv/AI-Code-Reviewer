@@ -3,36 +3,39 @@
 Tài liệu này giải thích **phần của Người 1** trong đề tài *AI Code Reviewer*:
 vì sao thiết kế như vậy, code đã viết dùng để làm gì, và cách tự làm lại từ đầu.
 
-Mục tiêu: hiểu + giải thích được trước giảng viên, không cần đọc code từng dòng.
+**Mục tiêu:** hiểu + giải thích được trước giảng viên, không cần đọc code từng dòng.
+**Đối tượng:** Người 1 (Backend Developer) — chịu trách nhiệm API, pipeline, Web UI.
+**Ưu tiên tuần:** **Backend API + Mock API (D1–D5) → Web UI (D6) → Deploy (D7)**. Không làm ngược: đừng mất 3 ngày làm UI đẹp rồi mới có API.
+
+---
 
 ---
 
 ## Mục 0. Bạn đang làm cái gì trong cả nhóm?
 
-Toàn bộ hệ thống có 3 người, 3 mảng:
+Toàn bộ hệ thống có 3 người, 3 mảng chức năng rõ ràng:
 
 ```
-                    ┌─────────────────────────────────────────┐
-  Web UI  ──POST──▶ │            BACKEND  (Người 1)           │
-  (Người 1)         │                                         │
-                    │  1. Bandit SAST  ──┐                    │
-  Chrome Ext ─────▶ │                    ├─▶ 1 lượt gọi LLM ──▶│──▶ JSON (10 trường)
-  (Người 2)        │  2. LLM (Người 3) ─┘     (Single-pass)  │
-                    │  3. Lọc dòng ảo giác                     │
-                    │  4. Gộp trùng                            │
-                    └─────────────────────────────────────────┘
+                                 ┌─────────────────────────────────────────┐
+   Web UI (Người 1)  ──POST ────▶ │             BACKEND  (Người 1)            │
+                                    │                                             │
+                                    │  1. Bandit SAST  ──┐                        │
+   Chrome Ext (Người 2) ──────────▶ │                    ├─▶ 1 lượt gọi LLM ────▶│──▶ JSON (10 trường)
+                                    │  2. LLM (Người 3) ─┘     (Single-pass)    │
+                                    │  3. Lọc dòng ảo giác                       │
+                                    │  4. Gộp trùng                             │
+                                    └─────────────────────────────────────────┘
 ```
 
 **Bạn (Người 1) là "xương sống" của hệ thống.** Hai người còn lại đều phụ thuộc vào bạn:
 
-- **Người 2** cần API để Extension gọi vào, và cần `samples/` chạy qua API của bạn.
-- **Người 3** viết prompt — nhưng prompt chạy trong **service của bạn**.
+- **Người 2** cần API để Chrome Extension gọi vào, và cần `samples/` chạy qua API của bạn.
+- **Người 3** viết prompt — nhưng prompt chạy trong **service của you**.
 
-Nếu bạn chậm, cả nhóm chậm. Vì vậy thứ tự ưu tiên trong 1 tuần là:
+> **Quy tắc ưu tiên tuần:** **Backend API + Mock API (D1–D5) → Web UI (D6) → Deploy (D7)**.
+> Không làm ngược: đừng mất 3 ngày làm UI đẹp rồi mới có API. Khi chưa có API, hãy dùng `/mock/review` để tiến triển song song.
 
-> **Backend API + Mock API (D1–D5) → Web UI (D6) → Deploy (D7)**
-
-Không làm ngược: đừng mất 3 ngày làm UI đẹp rồi mới có API.
+Nếu bạn chậm, cả nhóm chậm.
 
 ---
 
@@ -47,41 +50,45 @@ Lượt 1: "review code này, tìm lỗi"      → kết quả A
 Lượt 2: "đây là code + cảnh báo của Bandit, xác minh xem có thật không" → kết quả B
 ```
 
-Vấn đề: tốn **2 lần token**, tốn **2 lần độ trễ**, và phải truyền lại toàn bộ code 2 lần.
+**Vấn đề**: tốn **2 lần token**, tốn **2 lần độ trễ**, và phải truyền lại toàn bộ code 2 lần. Với code snippet ~100 dòng, chi phí token gấp 2x, và latency gấp 2x so với cách Single-pass.
 
 Cách của đề tài này (**Single-pass**): nhúng kết quả Bandit vào System Prompt, yêu cầu LLM làm **2 việc cùng lúc** trong 1 lượt:
 
 1. **Thẩm định** (adjudication): cảnh báo Bandit nào là thật, cái nào là báo động giả?
-2. **Bổ sung** (detection): tìm lỗi mà Bandit bỏ sót.
+2. **Bổ sung** (detection): tìm lỗi mà Bandit bỏ sót (bugs, quality issues).
 
-→ Giảm ~50% chi phí token và độ trễ. Đây là điểm bạn nên nói khi bảo vệ:
+**Kết quả**: Giảm ~50% chi phí token và độ trễ. Đây là điểm bạn nên nói khi bảo vệ:
 
 > *"Vì sao Single-pass? Vì lượt 2 cần lại toàn bộ code làm nguyên nhân chính của độ trễ và chi phí.
 > Với lượt 1 đã có sẵn ngữ cảnh code, việc thẩm định và phát hiện là hai mặt của cùng một bài toán,
-> nên tách làm 2 lượt là lãng phí. Ta gộp lại và đo được giảm khoảng 50% latency."*
+> nên tách làm 2 lượt là lãng phí. Ta gộp lại và đo được giảm khoảng 50% latency."*』
 
 ### 1.2 Ba loại lỗi mà hệ thống phân loại
 
-| `type` | Ý nghĩa | Bandit có loại này không? | LLM có loại này không? |
-|---|---|---|---|
-| `security` | SQLi, Command Injection, Hardcoded Secret, Weak Crypto… | ✅ Chủ yếu | ✅ |
-| `bug` | Chia 0, off-by-one, chưa bắt exception, rò rỉ tài nguyên | ❌ Hầu như không | ✅ |
-| `quality` | Import thừa, code trùng lặp, hàm quá dài | ⚠️ Một phần | ✅ |
+| `type` | Ý nghĩa | Bandit | LLM | Ghi chú |
+|---|---|---|---|---|
+| `security` | SQLi, Command Injection, Hardcoded Secret, Weak Crypto… | ✅ Chủ yếu | ✅ | Bandit giỏi phát hiện lỗi bảo mật rõ ràng dựa trên quy tắc cứng. |
+| `bug` | Chia 0, off-by-one, chưa bắt exception, rò rỉ tài nguyên | ❌ Hầu như không | ✅ | LLM là người mẫn với loại bug này (logic lỗi, resource leak). |
+| `quality` | Import thừa, code trùng lặp, hàm quá dài | ⚠️ Một phần | ✅ | Bandit có thể bắt một部分, nhưng LLM tốt hơn nhiều. |
 
-→ **Đây chính là lý do cần hybrid**: Bandit giỏi security nhưng gần như mù với bug/quality; LLM ngược lại.
+**Đây chính là lý do cần chế độ `hybrid`**: Bandit giỏiSecurity nhưng gần như mù với `bug`/`quality`; LLM lại contraire. Chế độ `hybrid` kết hợp ưu điểm của cả hai: lấy kết quả Bandit về an toàn cho các lỗi bảo mật, còn LLM sẽ lọc false positive và phát hiện thêm bug/quality mà Bandit bỏ sót.
+
+**Ví dụ thực tế**: Code `import subprocess` sẽ bị Bandit báo `B602` (security, low confidence). Khi chạy `mode=bandit` sẽ giữ lại cảnh báo. Khi chạy `mode=hybrid`, LLM sẽ thẩm định và nhận đây là `false positive` (import hợp lệ), nên cảnh báo sẽ bị loại bỏ. Ngược lại, lỗi `eval()` có thể bị Bandit bỏ sót nhưng LLM sẽ bắt được là `bug`.
 
 ### 1.3 Vì sao cần `confidence`?
 
 Lấy cảm hứng từ nghiên cứu Beko (Người 3 trích trong file Word): AI gợi ý nhiều → người dùng **mệt mỏi cảnh báo** (alert fatigue) → PR đóng chậm hơn.
 
 Nên mỗi lỗi phải có `confidence`:
-- `high` — luồng dữ liệu rõ ràng, không thể tránh.
-- `medium` — có dấu hiệu nhưng thiếu context.
-- `low` — chỉ là suy đoán.
+- `high` — luồng dữ liệu rõ ràng, không thể tránh (ví dụ: SQL injection qua string concatenation).
+- `medium` — có dấu hiệu nhưng thiếu context (ví dụ: Hardcoded password nhưng có thể dùng qua biến môi trường).
+- `low` — chỉ là suy đoán hoặc đường đi không thực tế (ví dụ: `import subprocess` nhưng không execute thực tế).
 
 Người dùng có thể **lọc theo confidence** để chỉ xem lỗi chắc chắn. Đây là ý nưởng Human-in-the-Loop.
 
 ---
+
+**Lưu ý khi bảo vệ**: Việc đánh `confidence` giúp người dùng không bị "ngộp cảnh báo" và tập trung vào những lỗi thực sự nghiêm trọng. Điều này cũng là lý do `pipeline.py` giữ `confidence` cao hơn khi gộp Bandit + LLM (LLM đã kiểm chứng có context → đáng tin hơn).
 
 ## Mục 2. Giải thích từng file trong `backend/app/`
 
@@ -298,7 +305,7 @@ Nhờ vậy:
 
 ## Mục 3. Giải thích Web UI (`backend/web/index.html`)
 
-Toàn bộ giao diện nằm trong **1 file HTML** (CSS + JS inline) — cố ý, để 1 tuần không phải cài Node/Vite/npm. Chỉ dùng CodeMirror (đã tải sẵn vào `web/vendor/` nên **demo offline vẫn chạy**).
+Giao diện gồm **`index.html` + `static/css/app.css` + `static/js/app.js`** — cố ý không dùng framework/build step để 1 tuần không phải cài Node/Vite/npm. CodeMirror (JS + CSS + theme) đã tải sẵn vào `web/static/vendor/` nên **demo offline vẫn chạy**.
 
 ### 3.1 Vì sao CodeMirror thay vì Monaco?
 
@@ -328,11 +335,11 @@ Bấm 1 dòng code bên trái → sự kiện "cursorActivity" của CodeMirror
 
 | Nhóm | Màu | CSS |
 |---|---|---|
-| Security | Đỏ | `--security: #f85149` |
-| Bug | Cam | `--bug: #d29922` |
-| Quality | Xanh | `--quality: #3fb950` |
+| Security | Đỏ | `--security: #f87171` |
+| Bug | Cam | `--bug: #fbbf24` |
+| Quality | Xanh | `--quality: #34d399` |
 
-Màu được thể hiện bằng **viền trái 4px** của thẻ lỗi — nhìn nhanh, không cần đọc chữ.
+Màu được thể hiện bằng **viền trái 3px** của thẻ lỗi — nhìn nhanh, không cần đọc chữ.
 
 ---
 
