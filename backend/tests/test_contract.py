@@ -1,9 +1,46 @@
 """Contract test: đảm bảo response luôn đúng 10 trường theo hợp đồng v2."""
 from fastapi.testclient import TestClient
 
+import app.main as main_module
 from app.main import app
 
 client = TestClient(app)
+
+
+def _fake_result(mode: str) -> dict:
+    return {"issues": [], "meta": {"mode": mode}}
+
+
+def test_review_accepts_mode_in_body(monkeypatch):
+    captured = {}
+
+    def fake_review(code: str, mode: str) -> dict:
+        captured["mode"] = mode
+        return _fake_result(mode)
+
+    monkeypatch.setattr(main_module, "review_code", fake_review)
+    r = client.post("/review", json={"code": "x = 1", "mode": "llm"})
+    assert r.status_code == 200
+    assert captured["mode"] == "llm"
+    assert r.json()["meta"]["mode"] == "llm"
+
+
+def test_review_query_mode_overrides_body(monkeypatch):
+    captured = {}
+
+    def fake_review(code: str, mode: str) -> dict:
+        captured["mode"] = mode
+        return _fake_result(mode)
+
+    monkeypatch.setattr(main_module, "review_code", fake_review)
+    r = client.post("/review?mode=bandit", json={"code": "x = 1", "mode": "llm"})
+    assert r.status_code == 200
+    assert captured["mode"] == "bandit"
+
+
+def test_review_rejects_invalid_mode():
+    r = client.post("/review", json={"code": "x = 1", "mode": "fast"})
+    assert r.status_code == 422
 
 
 def test_health():

@@ -8,7 +8,8 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
 ```json
 {
   "code": "import os\nprint(os.getcwd())",
-  "filename": "snippet.py"
+  "filename": "snippet.py",
+  "mode": "hybrid"
 }
 ```
 
@@ -16,6 +17,9 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
 |---|---|---|---|
 | `code` | `string` | có | Mã nguồn Python cần review |
 | `filename` | `string` | không | Chỉ dùng hiển thị (mặc định `snippet.py`) |
+| `mode` | `string` | không | `bandit` \| `llm` \| `hybrid` (mặc định `hybrid`) |
+
+`mode` cũng nhận qua query: `POST /review?mode=bandit`. Nếu có cả hai, **query thắng body**.
 
 ### Response
 ```json
@@ -34,7 +38,7 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
     }
   ],
   "meta": {
-    "mode": "bandit+llm",
+    "mode": "hybrid",
     "bandit_count": 4,
     "llm_count": 6,
     "dropped_invalid_lines": 1,
@@ -43,6 +47,11 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
   }
 }
 ```
+
+`meta.mode` phản ánh chế độ đã chạy: `bandit`, `llm`, `hybrid`, hoặc `mock`.
+- `mode=bandit`: chỉ chạy Bandit, `llm_count = 0`, `llm_error = null`.
+- `mode=llm`: chỉ chạy LLM, `bandit_count = 0`; nếu LLM chưa cấu hình thì `issues = []` và `llm_error` có thông báo.
+- `mode=hybrid`: chạy cả hai; nếu LLM lỗi/chưa cấu hình thì vẫn trả kết quả Bandit kèm `llm_error`.
 
 ## 2. Cấu trúc `Issue` (10 trường bắt buộc)
 
@@ -73,10 +82,11 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
 | `400` | Code rỗng | `{"detail": "Mã nguồn trống."}` |
 | `413` | Vượt `MAX_CODE_LENGTH` | `{"detail": "Mã nguồn quá dài (... > ...) ký tự."}` |
 | `500` | Lỗi nội bộ | `{"detail": "Lỗi nội bộ: ..."}` |
-| `422` | Payload sai schema | Lỗi validation của Pydantic |
+| `422` | Payload sai schema (kể cả `mode` không hợp lệ) | Lỗi validation của Pydantic |
 
 ## 5. Ghi chú tích hợp
 
-- **Chrome Extension (Người 2)**: có thể gọi thẳng `POST /review`. Nếu chưa có key, vẫn hoạt động (Bandit-only).
+- **Chrome Extension (Người 2)**: có thể gọi thẳng `POST /review`. Nếu chưa có key, dùng `mode=bandit`.
 - **Prompt (Người 3)**: không được đổi 10 trường trên. Chỉ được thêm logic trong `prompts.py`.
 - **Phát triển song song**: luôn dùng `/mock/review` khi chưa sẵn sàng cấu hình LLM.
+- **Đo 3 chế độ**: dùng cùng một bộ `samples/`, lần lượt gọi `mode=bandit`, `mode=llm`, `mode=hybrid` để tính Precision / Recall / F1 / FPR / Latency.

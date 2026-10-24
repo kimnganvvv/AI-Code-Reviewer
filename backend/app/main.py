@@ -4,11 +4,12 @@ Endpoints:
 - GET  /health
 - GET  /        -> web/index.html
 - GET  /sample   -> code mẫu
-- POST /review   -> review thật (Bandit + LLM nếu cấu hình)
+- POST /review   -> review thật (mode=bandit | llm | hybrid)
 - POST /mock/review -> dữ liệu giả cho team phát triển song song
 """
 
 import logging
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import MAX_CODE_LENGTH, WEB_DIR, llm_is_configured
 from .mock_data import SAMPLE_CODE, mock_issues
 from .pipeline import review_code
-from .schemas import ReviewRequest, ReviewResponse
+from .schemas import ReviewMode, ReviewRequest, ReviewResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("ai-code-reviewer")
@@ -26,7 +27,7 @@ log = logging.getLogger("ai-code-reviewer")
 app = FastAPI(
     title="AI Code Reviewer API",
     description="Hybrid SAST (Bandit) + LLM, single-pass adjudication. Hợp đồng JSON v2 dùng chung cả nhóm.",
-    version="2.1.0",
+    version="2.2.0",
 )
 
 app.add_middleware(
@@ -61,14 +62,19 @@ def sample():
 
 
 @app.post("/review", response_model=ReviewResponse)
-def review(payload: ReviewRequest):
+def review(payload: ReviewRequest, mode: Optional[ReviewMode] = None):
+    """Review code. `mode` có thể gửi trong body hoặc query (?mode=...).
+
+    Query có độ ưu tiên cao hơn body để tiện đo đạc bằng script:
+    `POST /review?mode=bandit`.
+    """
     code = payload.code or ""
     if not code.strip():
         raise HTTPException(status_code=400, detail="Mã nguồn trống.")
     if len(code) > MAX_CODE_LENGTH:
         raise HTTPException(status_code=413, detail=f"Mã nguồn quá dài ({len(code)} > {MAX_CODE_LENGTH} ký tự).")
     try:
-        return review_code(code)
+        return review_code(code, mode or payload.mode)
     except Exception as exc:
         log.exception("Lỗi khi review")
         raise HTTPException(status_code=500, detail=f"Lỗi nội bộ: {exc}") from exc

@@ -252,11 +252,24 @@ Dù LLM trả sai kiểu dữ liệu (thiếu trường, `severity: "critical"`,
 ```python
 app.add_middleware(CORSMiddleware, allow_origins=["*"], ...)   # Extension gọi cross-origin
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)))        # CodeMirror, CSS
-@app.post("/review")        # API chính
+@app.post("/review")        # API chính, nhận mode=bandit|llm|hybrid
 @app.post("/mock/review")   # Mock API cho Người 2 & 3
 @app.get("/health")         # Trạng thái
 @app.get("/sample")         # Code mẫu
 ```
+
+**Chế độ `mode` (phục vụ mục "Đo 3 chế độ" trong đề tài):**
+
+| `mode` | Luồng chạy | Dùng để |
+|---|---|---|
+| `bandit` | Chỉ `run_bandit()` | Baseline SAST, không cần API key |
+| `llm` | Chỉ `llm_review()` (Bandit findings rỗng) | Đo Only LLM |
+| `hybrid` | Bandit → LLM 1 lượt | Chế độ sản phẩm (mặc định) |
+
+`mode` nhận trong body hoặc query (`/review?mode=bandit`). `meta.mode` echo lại
+đúng chế độ để script đo không phải tự suy luận. Khi LLM chưa cấu hình:
+`hybrid` vẫn trả kết quả Bandit + `llm_error`; `llm` trả `issues=[]` + `llm_error`.
+Nhờ vậy cùng một endpoint có thể chạy 3 thí nghiệm mà không cần 3 bản deploy.
 
 **Vì sao bật `allow_origins=["*"]`?** Chrome Extension (Người 2) gọi API từ domain khác → bị CORS chặn nếu không bật. Với đồ án, API không có cookie/đăng nhập nên `*` là chấp nhận được. **Nói rõ điều này khi bảo vệ** và giải thích rằng với sản phẩm thật sẽ giới hạn danh sách domain.
 
@@ -371,10 +384,10 @@ Thứ tự đúng, mỗi bước **chạy được ngay** trước khi sang bư�
 |---|---|
 | Vì sao dùng Bandit thay vì Semgrep/CodeQL? | Bandit là công cụ SAST chuyên Python, cài bằng 1 lệnh `pip`, chạy offline → phù hợp đồ án 1 tuần. Kiến trúc cho phép thay tool sau (chỉ cần sửa `bandit_runner.py`). |
 | Line Validation có chính xác không? | Chính xác theo nghĩa "loại nhiễu", không phải "phân loại đúng lỗi". Nó **không quyết định lỗi có thật hay không**, chỉ loại dòng không tồn tại. Phần "có thật hay không" là việc của LLM + con người. |
-| Bao nhiêu lệnh gọi LLM? | Đúng **1** lệnh cho mỗi lần review, không phụ thuộc số lỗi tìm được. |
-| LLM có thể làm hỏng hệ thống không? | Không. Mọi output đều đi qua `sanitize_llm_issues` + `validate_lines`; lỗi LLM chỉ đẩy vào `meta.llm_error` và hệ thống vẫn trả kết quả Bandit. |
+| Bao nhiêu lệnh gọi LLM? | `hybrid` và `llm`: đúng **1** lệnh cho mỗi lần review, không phụ thuộc số lỗi. `bandit`: **0** lệnh. |
+| LLM có thể làm hỏng hệ thống không? | Không. Mọi output đều đi qua `sanitize_llm_issues` + `validate_lines`; lỗi LLM chỉ đẩy vào `meta.llm_error`. Với `hybrid` hệ thống vẫn trả kết quả Bandit; với `llm` trả mảng rỗng thay vì crash. |
 | Nếu không có Internet khi demo? | CodeMirror đã nằm trong `web/vendor/`. LLM cần mạng — nên chuẩn bị bản **Bandit-only** (badge báo "LLM: chưa cấu hình") và video demo dự phòng. |
-| Làm sao biết hệ thống không bị "ảo giác"? | So sánh kết quả với `labels.json` của Người 2: đo Precision/Recall/F1/FPR, và so 3 chế độ Only Bandit / Only LLM / Hybrid. Đó là bằng chứng định lượng cho cả nhóm. |
+| Làm sao biết hệ thống không bị "ảo giác"? | So sánh kết quả với `labels.json` của Người 2: đo Precision/Recall/F1/FPR, và so 3 chế độ bằng cách gọi cùng endpoint với `mode=bandit`, `mode=llm`, `mode=hybrid`. Đó là bằng chứng định lượng cho cả nhóm. |
 | Chi phí LLM? | 1 lượt gọi/1 request. Với `gpt-4o-mini` và snippet ~100 dòng, chi phí rất nhỏ; có thể dùng Ollama local để **0 đồng** cho demo. |
 
 ---

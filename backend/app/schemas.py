@@ -12,6 +12,7 @@ IssueType = Literal["security", "bug", "quality"]
 Severity = Literal["high", "medium", "low"]
 Confidence = Literal["high", "medium", "low"]
 Source = Literal["bandit", "llm", "both"]
+ReviewMode = Literal["bandit", "llm", "hybrid"]
 
 
 class Issue(BaseModel):
@@ -31,10 +32,14 @@ class Issue(BaseModel):
 class ReviewRequest(BaseModel):
     code: str = Field(..., description="Mã nguồn Python cần review")
     filename: str = Field("snippet.py", description="Tên file (chỉ dùng hiển thị)")
+    mode: ReviewMode = Field(
+        "hybrid",
+        description="Chế độ chạy: bandit (chỉ SAST) | llm (chỉ LLM) | hybrid (Bandit + LLM)",
+    )
 
 
 class ReviewMeta(BaseModel):
-    mode: str = Field(..., description="bandit-only | bandit+llm | mock")
+    mode: str = Field(..., description="Chế độ đã chạy: bandit | llm | hybrid | mock")
     bandit_count: int = 0
     llm_count: int = 0
     dropped_invalid_lines: int = 0
