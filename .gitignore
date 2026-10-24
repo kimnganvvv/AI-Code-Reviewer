@@ -1,18 +1,16 @@
-# Python
+
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
-.pytest_cache/
-
-# mt
+venv/
 .env
-
-# Kết quả đo thô 
-benchmark/results/raw/*
-!benchmark/results/raw/.gitkeep
-
-# Hệ điều hành, editor
 .DS_Store
-.vscode/
-.idea/
-node_modules/
+*.log
+~$*.docx
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Code Reviewer | Hybrid SAST + LLM</title>
+<link rel="stylesheet" href="/static/vendor/codemirror.min.css" />
+<link rel="stylesheet" href="/static/vendor/material-darker.min.css" />
+<link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z"></path>
+        <path d="M12 12 20 7.5"></path>
+        <path d="M12 12v9"></path>
+        <path d="M12 12 4 7.5"></path>
+      </svg>
+    </div>
+    <div>
+      <h1>AI Code Reviewer</h1>
+      <p class="brand-sub">Hybrid SAST (Bandit) &middot; Single-pass LLM adjudication</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <span id="llmStatus" class="badge">Đang kiểm tra...</span>
+    <span class="badge plain">Hợp đồng JSON v2</span>
+    <span class="badge plain">Bandit | LLM | Hybrid</span>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="toolbar-group">
+    <button id="btnRun" class="primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m9 12 2 2 4-4"></path>
+        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10Z"></path>
+      </svg>
+      <span class="btn-label">Phân tích</span>
+    </button>
+    <button id="btnMock">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18"></path>
+        <path d="M7 12h10"></path>
+        <path d="M9 18h6"></path>
+      </svg>
+      <span class="btn-label">Dữ liệu mô phỏng</span>
+    </button>
+    <button id="btnSample">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v12"></path>
+        <path d="m8 7 4-4 4 4"></path>
+        <path d="M8 21h8"></path>
+      </svg>
+      <span class="btn-label">Tải ví dụ</span>
+    </button>
+    <div class="control">
+      <span class="group-label">Chế độ</span>
+      <select id="fMode" title="Chế độ chạy">
+        <option value="hybrid">Hybrid &middot; Bandit + LLM</option>
+        <option value="bandit">Chỉ Bandit</option>
+        <option value="llm">Chỉ LLM</option>
+      </select>
+    </div>
+  </div>
+  <div class="toolbar-filters">
+    <span class="group-label">Lọc</span>
+    <select id="fType">
+      <option value="">Tất cả loại</option>
+      <option value="security">Security</option>
+      <option value="bug">Bug</option>
+      <option value="quality">Quality</option>
+    </select>
+    <select id="fSeverity">
+      <option value="">Mức độ</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+    <select id="fConfidence">
+      <option value="">Độ tin cậy</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+    <button id="btnReset" class="ghost">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+        <path d="M21 3v6h-6"></path>
+      </svg>
+      Bỏ lọc
+    </button>
+  </div>
+</div>
+
+<main>
+  <section class="pane">
+    <div class="pane-head">
+      <div class="pane-title">
+        <span class="dot dot-code"></span>
+        <span>Python Source</span>
+      </div>
+      <span class="pane-hint">Click vào dòng để xem lỗi tương ứng</span>
+    </div>
+    <div class="editor-wrap">
+      <textarea id="editor" spellcheck="false"></textarea>
+    </div>
+  </section>
+  <section class="pane">
+    <div class="pane-head">
+      <div class="pane-title">
+        <span class="dot dot-result"></span>
+        <span>Findings</span>
+      </div>
+      <span id="issueCount" class="count-badge">0</span>
+      <span class="pane-hint">Nhấn thẻ để nhảy đến dòng trong mã nguồn</span>
+    </div>
+    <div id="issues">
+      <div class="empty">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z"></path>
+          <path d="m9 12 2 2 4-4"></path>
+        </svg>
+        <div class="empty-title">Chưa có kết quả</div>
+        <div class="empty-sub">Dán code rồi bấm “Phân tích” để bắt đầu.</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="meta">Chưa chạy.</div>
+
+<script src="/static/vendor/codemirror.min.js"></script>
+<script src="/static/vendor/python.min.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

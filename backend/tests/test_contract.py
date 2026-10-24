@@ -1,0 +1,85 @@
+"""Contract test: đảm bảo response luôn đúng 10 trường theo hợp đồng v2."""
+from fastapi.testclient import TestClient
+
+import app.main as main_module
+from app.main import app
+
+client = TestClient(app)
+
+
+def _fake_result(mode: str) -> dict:
+    return {"issues": [], "meta": {"mode": mode}}
+
+
+def test_review_accepts_mode_in_body(monkeypatch):
+    captured = {}
+
+    def fake_review(code: str, mode: str) -> dict:
+        captured["mode"] = mode
+        return _fake_result(mode)
+
+    monkeypatch.setattr(main_module, "review_code", fake_review)
+    r = client.post("/review", json={"code": "x = 1", "mode": "llm"})
+    assert r.status_code == 200
+    assert captured["mode"] == "llm"
+    assert r.json()["meta"]["mode"] == "llm"
+
+
+def test_review_query_mode_overrides_body(monkeypatch):
+    captured = {}
+
+    def fake_review(code: str, mode: str) -> dict:
+        captured["mode"] = mode
+        return _fake_result(mode)
+
+    monkeypatch.setattr(main_module, "review_code", fake_review)
+    r = client.post("/review?mode=bandit", json={"code": "x = 1", "mode": "llm"})
+    assert r.status_code == 200
+    assert captured["mode"] == "bandit"
+
+
+def test_review_rejects_invalid_mode():
+    r = client.post("/review", json={"code": "x = 1", "mode": "fast"})
+    assert r.status_code == 422
+
+
+def test_health():
+    r = client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert "llm_enabled" in body
+    assert "max_code_length" in body
+
+
+def test_sample():
+    r = client.get("/sample")
+    assert r.status_code == 200
+    assert "code" in r.json()
+
+
+def test_mock_review_contract():
+    r = client.post("/mock/review", json={"code": "x = 1"})
+    assert r.status_code == 200
+    data = r.json()
+    assert "issues" in data and "meta" in data
+    assert isinstance(data["issues"], list)
+    assert isinstance(data["meta"], dict)
+    for it in data["issues"]:
+        # Đủ 10 trường theo hợp đồng
+        for k in ["line", "type", "severity", "confidence", "cwe_id", "message", "explanation", "suggestion", "source"]:
+            assert k in it
+        assert it["type"] in {"security", "bug", "quality"}
+        assert it["severity"] in {"high", "medium", "low"}
+        assert it["confidence"] in {"high", "medium", "low"}
+        assert it["source"] in {"bandit", "llm", "both"}
+
+
+def test_review_empty_code():
+    r = client.post("/review", json={"code": "   "})
+    assert r.status_code == 400
+
+
+def test_review_too_long():
+    r = client.post("/review", json={"code": "x" * 20005})
+    assert r.status_code == 413
