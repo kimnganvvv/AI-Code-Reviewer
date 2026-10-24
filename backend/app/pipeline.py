@@ -17,6 +17,12 @@ log = logging.getLogger("ai-code-reviewer")
 SEV_RANK = {"low": 1, "medium": 2, "high": 3}
 VALID_TYPE = {"security", "bug", "quality"}
 VALID_SEV = {"high", "medium", "low"}
+VALID_MODES = {"bandit", "llm", "hybrid"}
+
+
+def normalize_mode(mode: str | None) -> str:
+    m = (mode or "hybrid").strip().lower()
+    return m if m in VALID_MODES else "hybrid"
 
 
 # 1) Line Validation: loại số dòng bịa đặt do ảo giác LLM
@@ -152,26 +158,35 @@ def sanitize_llm_issues(raw: List[dict] | None) -> List[dict]:
     return clean
 
 
-# 4) Entry point
-def review_code(code: str) -> dict:
-    b_issues = run_bandit(code)
+# 4) Entry point: chạy theo 1 trong 3 chế độ đo
+def review_code(code: str, mode: str = "hybrid") -> dict:
+    """Review code theo chế độ `bandit`, `llm` hoặc `hybrid`.
+
+    - bandit : chỉ chạy SAST, không gọi LLM (nhanh, rẻ, ít false positive logic).
+    - llm    : chỉ gọi LLM, không chạy Bandit (dùng để đo khả năng thuần LLM).
+    - hybrid : chạy Bandit rồi nhúng kết quả vào 1 lượt LLM (mặc định).
+    """
+    mode = normalize_mode(mode)
+    b_issues: List[dict] = []
     l_issues: List[dict] = []
     l_err = None
-    mode = "bandit-only"
 
-    if llm_is_configured():
-        try:
-            raw = llm_review(code, b_issues, prompts.SYSTEM_PROMPT, prompts.build_review_prompt)
-            l_issues = sanitize_llm_issues(raw)
-            mode = "bandit+llm"
-        except LLMError as e:
-            l_err = str(e)
-            log.warning("LLM thất bại, dùng chế độ bandit-only: %s", e)
-        except Exception as e:  # noqa
-            l_err = f"{type(e).__name__}: {e}"
-            log.warning("Lỗi không mong đợi khi gọi LLM: %s", e)
-    else:
-        l_err = "LLM chưa cấu hình (thiếu LLM_API_KEY hoặc USE_LLM=0)"
+    if mode in ("bandit", "hybrid"):
+        b_issues = run_bandit(code)
+
+    if mode in ("llm", "hybrid"):
+        if llm_is_configured():
+            try:
+                raw = llm_review(code, b_issues, prompts.SYSTEM_PROMPT, prompts.build_review_prompt)
+                l_issues = sanitize_llm_issues(raw)
+            except LLMError as e:
+                l_err = str(e)
+                log.warning("LLM thất bại (mode=%s): %s", mode, e)
+            except Exception as e:  # noqa
+                l_err = f"{type(e).__name__}: {e}"
+                log.warning("Lỗi không mong đợi khi gọi LLM (mode=%s): %s", mode, e)
+        else:
+            l_err = "LLM chưa cấu hình (thiếu LLM_API_KEY hoặc USE_LLM=0)"
 
     all_issues = b_issues + l_issues
     valid, dropped = validate_lines(all_issues, code)

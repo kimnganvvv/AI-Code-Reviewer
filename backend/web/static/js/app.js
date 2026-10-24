@@ -73,14 +73,36 @@ window.addEventListener("error", function (e) {
     });
   }
 
+  function emptyState(title, sub) {
+    var wrap = el("div", "empty");
+    wrap.innerHTML =
+      '<svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z"></path>' +
+      '<path d="m9 12 2 2 4-4"></path></svg>';
+    wrap.appendChild(el("div", "empty-title", title));
+    wrap.appendChild(el("div", "empty-sub", sub));
+    return wrap;
+  }
+
   function renderIssues() {
     var box = document.getElementById("issues");
     box.innerHTML = "";
     var list = filtered();
 
+    var countEl = document.getElementById("issueCount");
+    if (countEl) {
+      countEl.textContent = String(list.length);
+      countEl.title = allIssues.length + " lỗi tổng cộng";
+    }
+
     if (!list.length) {
-      box.appendChild(el("div", "empty",
-        allIssues.length ? "Không có lỗi nào khớp bộ lọc." : "Không phát hiện lỗi nào."));
+      box.appendChild(emptyState(
+        allIssues.length ? "Không có lỗi khớp bộ lọc" : "Không phát hiện lỗi",
+        allIssues.length
+          ? "Thử bỏ bớt điều kiện lọc để xem toàn bộ kết quả."
+          : "Code sạch, hoặc chưa có kết quả phân tích."
+      ));
       return;
     }
 
@@ -92,10 +114,10 @@ window.addEventListener("error", function (e) {
       var head = el("div", "issue-head");
       head.appendChild(el("span", "line", "Dòng " + issue.line));
       head.appendChild(el("span", "tag " + issue.type, issue.type));
-      head.appendChild(el("span", "chip", "sev: " + issue.severity));
-      head.appendChild(el("span", "chip", "conf: " + issue.confidence));
+      head.appendChild(el("span", "chip sev-" + issue.severity, "sev " + issue.severity));
+      head.appendChild(el("span", "chip conf-" + issue.confidence, "conf " + issue.confidence));
       if (issue.cwe_id) head.appendChild(el("span", "chip cwe", issue.cwe_id));
-      head.appendChild(el("span", "chip", "src: " + issue.source));
+      head.appendChild(el("span", "chip src-" + issue.source, "src " + issue.source));
       card.appendChild(head);
 
       card.appendChild(el("div", "msg", issue.message || "(không có mô tả)"));
@@ -151,12 +173,18 @@ window.addEventListener("error", function (e) {
     allIssues = (data && data.issues) || [];
     renderIssues();
 
+    var countEl = document.getElementById("issueCount");
+    if (countEl) {
+      countEl.textContent = String(allIssues.length);
+      countEl.title = allIssues.length + " lỗi tổng cộng";
+    }
+
     var m = (data && data.meta) || {};
     var parts = [
       "Chế độ: " + (m.mode || "?"),
       "Bandit: " + (m.bandit_count || 0),
       "LLM: " + (m.llm_count || 0),
-      "Bị lo do sai số dòng: " + (m.dropped_invalid_lines || 0),
+      "Bị lọc do sai số dòng: " + (m.dropped_invalid_lines || 0),
       "Gộp trùng: " + (m.merged_count || 0),
       "Tổng lỗi: " + allIssues.length
     ];
@@ -166,8 +194,19 @@ window.addEventListener("error", function (e) {
   }
 
   function post(url, payload) {
-    var btn = document.getElementById("btnRun");
-    btn.disabled = true;
+    var isMock = url.indexOf("/mock/") !== -1;
+    var btn = document.getElementById(isMock ? "btnMock" : "btnRun");
+    var other = document.getElementById(isMock ? "btnRun" : "btnMock");
+    var label = btn ? btn.querySelector(".btn-label") : null;
+    var oldLabel = label ? label.textContent : "";
+
+    if (btn) {
+      btn.disabled = true;
+      btn.classList.add("loading");
+    }
+    if (other) other.disabled = true;
+    if (label) label.textContent = "Đang xử lý...";
+
     return fetch(API + url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -182,18 +221,35 @@ window.addEventListener("error", function (e) {
       .then(handleResult)
       .catch(function (err) {
         setMeta("Lỗi gọi API: " + err.message, true);
+        var countEl = document.getElementById("issueCount");
+        if (countEl) countEl.textContent = "0";
       })
-      .finally(function () { btn.disabled = false; });
+      .finally(function () {
+        if (btn) {
+          btn.disabled = false;
+          btn.classList.remove("loading");
+        }
+        if (other) other.disabled = false;
+        if (label) label.textContent = oldLabel;
+      });
   }
 
   // ---------------------------------------------------------------- events
 
   document.getElementById("btnRun").addEventListener("click", function () {
-    post("/review", { code: cm.getValue(), filename: "snippet.py" });
+    post("/review", {
+      code: cm.getValue(),
+      filename: "snippet.py",
+      mode: document.getElementById("fMode").value
+    });
   });
 
   document.getElementById("btnMock").addEventListener("click", function () {
-    post("/mock/review", { code: cm.getValue(), filename: "snippet.py" });
+    post("/mock/review", {
+      code: cm.getValue(),
+      filename: "snippet.py",
+      mode: document.getElementById("fMode").value
+    });
   });
 
   document.getElementById("btnSample").addEventListener("click", function () {

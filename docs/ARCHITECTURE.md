@@ -10,16 +10,31 @@ AI Code Reviewer dùng mô hình **Single-pass Hybrid SAST + LLM**:
 ## 2. Luồng xử lý
 
 ```text
-1. Đầu vào      -> POST /review { code, filename }
+1. Đầu vào      -> POST /review { code, filename, mode }
+                   mode = bandit | llm | hybrid (mặc định hybrid)
 2. Kiểm tra     -> giới hạn độ dài, code không trống
-3. Bandit SAST  -> chạy trên file tạm, parse JSON, map test_id -> CWE
-4. LLM 1 lượt   -> nhúng bandit_findings + code vào prompt, yêu cầu thẩm định + bổ sung
+3. Bandit SAST  -> chạy khi mode = bandit | hybrid
+                   (file tạm, parse JSON, map test_id -> CWE)
+4. LLM 1 lượt   -> chạy khi mode = llm | hybrid
+                   (nhúng bandit_findings + code, thẩm định + bổ sung)
 5. Chuẩn hóa    -> sanitize_llm_issues (ép kiểu, lọc trường lạ)
 6. Line Valid.  -> loại issue có line ngoài phạm vi file thực tế
 7. Merge/Dedup  -> gộp Bandit+LLM -> source="both" nếu cùng lỗi
 8. Sắp xếp      -> theo số dòng, sau đó theo severity
-9. Trả về       -> { issues: [...10 trường...], meta: {...} }
+9. Trả về       -> { issues: [...10 trường...], meta: {mode, ...} }
 ```
+
+**3 chế độ đo** (`mode` trong body hoặc query):
+
+| `mode` | Bandit | LLM | Mục đích |
+|---|---|---|---|
+| `bandit` | ✅ | ❌ | Baseline SAST, không tốn token |
+| `llm` | ❌ | ✅ | Đo khả năng thuần LLM (bug/quality) |
+| `hybrid` | ✅ | ✅ | Chế độ sản phẩm, thẩm định false positive |
+
+`meta.mode` luôn phản ánh chế độ đã yêu cầu để script đo tách kết quả. Nếu LLM
+chưa cấu hình: `hybrid` fallback về kết quả Bandit kèm `meta.llm_error`, còn
+`llm` trả danh sách rỗng kèm `meta.llm_error`.
 
 ## 3. Phân chia module (`backend/app/`)
 
