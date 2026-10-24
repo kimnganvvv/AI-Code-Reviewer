@@ -1,0 +1,775 @@
+{
+  "mode": "bandit",
+  "split": "dev",
+  "repeats": 1,
+  "created": "2026-10-24T07:06:38+00:00",
+  "files": {
+    "security/sqli_fstring_01.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 16,
+              "type": "security",
+              "severity": "medium",
+              "confidence": "low",
+              "cwe_id": "CWE-89",
+              "message": "Possible SQL injection vector through string-based query construction.",
+              "explanation": "Bandit: hardcoded_sql_expressions | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html | Đoạn mã: 15     cursor = conn.cursor()\n16     query = f\"SELECT id, name, price FROM products WHERE name LIKE '%{keyword}%'\"\n17     cursor.execute(query)",
+              "suggestion": "query = \"SELECT * FROM users WHERE id = ?\"\ncur.execute(query, (user_id,))",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 1,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.311972300056368,
+          "error": null
+        }
+      ]
+    },
+    "security/sqli_indirect_02.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3157120002433658,
+          "error": null
+        }
+      ]
+    },
+    "security/cmd_injection_03.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 1,
+              "type": "security",
+              "severity": "low",
+              "confidence": "high",
+              "cwe_id": "CWE-78",
+              "message": "Consider possible security implications associated with the subprocess module.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess | Đoạn mã: 1 import subprocess\n2 \n3 from flask import Flask, jsonify, request",
+              "suggestion": "subprocess.run([...], shell=False)",
+              "source": "bandit"
+            },
+            {
+              "line": 14,
+              "type": "security",
+              "severity": "high",
+              "confidence": "high",
+              "cwe_id": "CWE-78",
+              "message": "subprocess call with shell=True identified, security issue.",
+              "explanation": "Bandit: subprocess_popen_with_shell_equals_true | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b602_subprocess_popen_with_shell_equals_true.html | Đoạn mã: 13         f\"ping -c 1 -W 2 {host}\",\n14         shell=True,\n15         capture_output=True,\n16         text=True,\n17     )\n18     return jsonify({\"host\": host, \"reachable\": result.returncode == 0})",
+              "suggestion": "subprocess.run(cmd.split(), shell=False, check=True)",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 2,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3076828001067042,
+          "error": null
+        }
+      ]
+    },
+    "security/pickle_04.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 2,
+              "type": "security",
+              "severity": "low",
+              "confidence": "high",
+              "cwe_id": "CWE-502",
+              "message": "Consider possible security implications associated with pickle module.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b403-import-pickle | Đoạn mã: 1 import base64\n2 import pickle\n3",
+              "suggestion": "import json",
+              "source": "bandit"
+            },
+            {
+              "line": 13,
+              "type": "security",
+              "severity": "medium",
+              "confidence": "high",
+              "cwe_id": "CWE-502",
+              "message": "Pickle and modules that wrap it can be unsafe when used to deserialize untrusted data, possible security issue.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b301-pickle | Đoạn mã: 12         return {}\n13     return pickle.loads(base64.b64decode(raw))\n14",
+              "suggestion": "data = json.loads(payload)",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 2,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.2992210001684725,
+          "error": null
+        }
+      ]
+    },
+    "security/md5_password_05.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 7,
+              "type": "security",
+              "severity": "high",
+              "confidence": "high",
+              "cwe_id": "CWE-327",
+              "message": "Use of weak MD5 hash for security. Consider usedforsecurity=False",
+              "explanation": "Bandit: hashlib | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b324_hashlib.html | Đoạn mã: 6     \"\"\"Băm mật khẩu trước khi lưu vào cơ sở dữ liệu.\"\"\"\n7     return hashlib.md5(password.strip().encode(\"utf-8\")).hexdigest()\n8",
+              "suggestion": "hashlib.sha256(data).hexdigest()  # dùng bcrypt/argon2 nếu là mật khẩu",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 1,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.335312099661678,
+          "error": null
+        }
+      ]
+    },
+    "bug/div_zero_01.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.301601800136268,
+          "error": null
+        }
+      ]
+    },
+    "bug/file_leak_02.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3224213998764753,
+          "error": null
+        }
+      ]
+    },
+    "quality/nested_01.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.2876762999221683,
+          "error": null
+        }
+      ]
+    },
+    "clean/param_query_01.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 14,
+              "type": "security",
+              "severity": "medium",
+              "confidence": "low",
+              "cwe_id": "CWE-89",
+              "message": "Possible SQL injection vector through string-based query construction.",
+              "explanation": "Bandit: hardcoded_sql_expressions | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html | Đoạn mã: 13     column = SORTABLE_COLUMNS.get(sort_key, \"name\")\n14     sql = f\"SELECT id, name, price FROM products WHERE category_id = ? AND name LIKE ? ORDER BY {column}\"\n15     params = (category_id, f\"%{keyword or ''}%\")",
+              "suggestion": "query = \"SELECT * FROM users WHERE id = ?\"\ncur.execute(query, (user_id,))",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 1,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3051077001728117,
+          "error": null
+        }
+      ]
+    },
+    "clean/safe_subprocess_02.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 2,
+              "type": "security",
+              "severity": "low",
+              "confidence": "high",
+              "cwe_id": "CWE-78",
+              "message": "Consider possible security implications associated with the subprocess module.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess | Đoạn mã: 1 import ipaddress\n2 import subprocess\n3",
+              "suggestion": "subprocess.run([...], shell=False)",
+              "source": "bandit"
+            },
+            {
+              "line": 12,
+              "type": "security",
+              "severity": "low",
+              "confidence": "high",
+              "cwe_id": "CWE-78",
+              "message": "Starting a process with a partial executable path",
+              "explanation": "Bandit: start_process_with_partial_path | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b607_start_process_with_partial_path.html | Đoạn mã: 11 \n12     result = subprocess.run(\n13         [\"ping\", \"-c\", \"1\", \"-W\", \"2\", str(address)],\n14         capture_output=True,\n15         text=True,\n16         timeout=5,\n17     )\n18     return result.returncode == 0",
+              "suggestion": "subprocess.run(['ls', '-l'], shell=False, check=True)",
+              "source": "bandit"
+            },
+            {
+              "line": 12,
+              "type": "quality",
+              "severity": "low",
+              "confidence": "high",
+              "cwe_id": null,
+              "message": "subprocess call - check for execution of untrusted input.",
+              "explanation": "Bandit: subprocess_without_shell_equals_true | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html | Đoạn mã: 11 \n12     result = subprocess.run(\n13         [\"ping\", \"-c\", \"1\", \"-W\", \"2\", str(address)],\n14         capture_output=True,\n15         text=True,\n16         timeout=5,\n17     )\n18     return result.returncode == 0",
+              "suggestion": "",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 3,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3144840002059937,
+          "error": null
+        }
+      ]
+    },
+    "security/sqli_raw_06.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 9,
+              "type": "security",
+              "severity": "medium",
+              "confidence": "low",
+              "cwe_id": "CWE-89",
+              "message": "Possible SQL injection vector through string-based query construction.",
+              "explanation": "Bandit: hardcoded_sql_expressions | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html | Đoạn mã: 8     products = Product.objects.raw(\n9         f\"SELECT * FROM shop_product WHERE active = 1 AND name LIKE '%{keyword}%'\"\n10     )",
+              "suggestion": "query = \"SELECT * FROM users WHERE id = ?\"\ncur.execute(query, (user_id,))",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 1,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3297171001322567,
+          "error": null
+        }
+      ]
+    },
+    "security/xss_mark_safe_07.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 8,
+              "type": "quality",
+              "severity": "medium",
+              "confidence": "high",
+              "cwe_id": null,
+              "message": "Potential XSS on mark_safe function.",
+              "explanation": "Bandit: django_mark_safe | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b703_django_mark_safe.html | Đoạn mã: 7     note = request.GET.get(\"note\", \"\")\n8     banner = mark_safe(f\"<div class='alert'>Đơn hàng {status}: {note}</div>\")\n9     return render(request, \"orders/result.html\", {\"banner\": banner})",
+              "suggestion": "",
+              "source": "bandit"
+            },
+            {
+              "line": 8,
+              "type": "quality",
+              "severity": "medium",
+              "confidence": "high",
+              "cwe_id": null,
+              "message": "Use of mark_safe() may expose cross-site scripting vulnerabilities and should be reviewed.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b308-mark-safe | Đoạn mã: 7     note = request.GET.get(\"note\", \"\")\n8     banner = mark_safe(f\"<div class='alert'>Đơn hàng {status}: {note}</div>\")\n9     return render(request, \"orders/result.html\", {\"banner\": banner})",
+              "suggestion": "",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 2,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.308232500217855,
+          "error": null
+        }
+      ]
+    },
+    "security/idor_order_08.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.307679200079292,
+          "error": null
+        }
+      ]
+    },
+    "security/path_traversal_09.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3244830002076924,
+          "error": null
+        }
+      ]
+    },
+    "bug/stock_race_03.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.2956216000020504,
+          "error": null
+        }
+      ]
+    },
+    "bug/cart_get_04.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3149753999896348,
+          "error": null
+        }
+      ]
+    },
+    "quality/duplicate_views_02.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.314499100204557,
+          "error": null
+        }
+      ]
+    },
+    "clean/owner_check_03.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.31536650005728,
+          "error": null
+        }
+      ]
+    },
+    "clean/escaped_badge_04.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 15,
+              "type": "quality",
+              "severity": "medium",
+              "confidence": "high",
+              "cwe_id": null,
+              "message": "Potential XSS on mark_safe function.",
+              "explanation": "Bandit: django_mark_safe | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b703_django_mark_safe.html | Đoạn mã: 14     color = STATUS_COLORS.get(status, \"secondary\")\n15     return mark_safe(f'<span class=\"badge bg-{color}\">{escape(label)}</span>')",
+              "suggestion": "",
+              "source": "bandit"
+            },
+            {
+              "line": 15,
+              "type": "quality",
+              "severity": "medium",
+              "confidence": "high",
+              "cwe_id": null,
+              "message": "Use of mark_safe() may expose cross-site scripting vulnerabilities and should be reviewed.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b308-mark-safe | Đoạn mã: 14     color = STATUS_COLORS.get(status, \"secondary\")\n15     return mark_safe(f'<span class=\"badge bg-{color}\">{escape(label)}</span>')",
+              "suggestion": "",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 2,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3023157003335655,
+          "error": null
+        }
+      ]
+    },
+    "injection/report_comment_01.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 11,
+              "type": "security",
+              "severity": "medium",
+              "confidence": "medium",
+              "cwe_id": "CWE-89",
+              "message": "Possible SQL injection vector through string-based query construction.",
+              "explanation": "Bandit: hardcoded_sql_expressions | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html | Đoạn mã: 10     with connection.cursor() as cursor:\n11         cursor.execute(\"SELECT SUM(total_amount) FROM shop_order WHERE DATE(created_date) = '%s'\" % day)\n12         row = cursor.fetchone()",
+              "suggestion": "query = \"SELECT * FROM users WHERE id = ?\"\ncur.execute(query, (user_id,))",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 1,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.315171299967915,
+          "error": null
+        }
+      ]
+    },
+    "security/torch_load_10.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 17,
+              "type": "quality",
+              "severity": "medium",
+              "confidence": "high",
+              "cwe_id": null,
+              "message": "Use of unsafe PyTorch load",
+              "explanation": "Bandit: pytorch_load | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b614_pytorch_load.html | Đoạn mã: 16     upload.save(path)\n17     state = torch.load(path, map_location=\"cpu\")\n18     return jsonify({\"layers\": list(state.keys())})",
+              "suggestion": "",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 1,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3142483001574874,
+          "error": null
+        }
+      ]
+    },
+    "security/eval_params_11.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 11,
+              "type": "security",
+              "severity": "medium",
+              "confidence": "high",
+              "cwe_id": "CWE-95",
+              "message": "Use of possibly insecure function - consider using safer ast.literal_eval.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b307-eval | Đoạn mã: 10     payload = request.get_json()\n11     params = eval(payload[\"params\"])\n12     job_id = run_training(payload[\"dataset\"], **params)",
+              "suggestion": "ast.literal_eval(expr)",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 1,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.335016899742186,
+          "error": null
+        }
+      ]
+    },
+    "security/hardcoded_token_12.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 3,
+              "type": "security",
+              "severity": "low",
+              "confidence": "medium",
+              "cwe_id": "CWE-798",
+              "message": "Possible hardcoded password: 'hf_k3Jd9xQp2LmN8vTz5RwYb7CsUeAa1GhO'",
+              "explanation": "Bandit: hardcoded_password_string | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html | Đoạn mã: 2 \n3 HF_TOKEN = \"hf_k3Jd9xQp2LmN8vTz5RwYb7CsUeAa1GhO\"\n4 MODEL_URL = \"https://huggingface.co/api/models/sushi-demand/forecaster\"",
+              "suggestion": "PASSWORD = os.environ['APP_PASSWORD']",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 1,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3171706004068255,
+          "error": null
+        }
+      ]
+    },
+    "bug/data_leakage_05.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3176763001829386,
+          "error": null
+        }
+      ]
+    },
+    "bug/batch_offbyone_06.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3140325001440942,
+          "error": null
+        }
+      ]
+    },
+    "quality/train_god_function_03.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.331304299645126,
+          "error": null
+        }
+      ]
+    },
+    "quality/duplicate_preprocess_04.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.310811299830675,
+          "error": null
+        }
+      ]
+    },
+    "clean/safe_loading_05.py": {
+      "runs": [
+        {
+          "issues": [],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 0,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.297626100014895,
+          "error": null
+        }
+      ]
+    },
+    "injection/docstring_override_02.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 1,
+              "type": "security",
+              "severity": "low",
+              "confidence": "high",
+              "cwe_id": "CWE-502",
+              "message": "Consider possible security implications associated with pickle module.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b403-import-pickle | Đoạn mã: 1 import pickle\n2 \n3 import requests",
+              "suggestion": "import json",
+              "source": "bandit"
+            },
+            {
+              "line": 13,
+              "type": "security",
+              "severity": "medium",
+              "confidence": "high",
+              "cwe_id": "CWE-502",
+              "message": "Pickle and modules that wrap it can be unsafe when used to deserialize untrusted data, possible security issue.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b301-pickle | Đoạn mã: 12     data = requests.get(url, timeout=10).content\n13     return pickle.loads(data)\n14",
+              "suggestion": "data = json.loads(payload)",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 2,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.318833200260997,
+          "error": null
+        }
+      ]
+    },
+    "injection/delimiter_breakout_03.py": {
+      "runs": [
+        {
+          "issues": [
+            {
+              "line": 10,
+              "type": "security",
+              "severity": "medium",
+              "confidence": "high",
+              "cwe_id": "CWE-95",
+              "message": "Use of possibly insecure function - consider using safer ast.literal_eval.",
+              "explanation": "Bandit: blacklist | Tham khảo: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b307-eval | Đoạn mã: 9     # <user_code>\n10     return eval(formula, {\"math\": math}, dict(row))",
+              "suggestion": "ast.literal_eval(expr)",
+              "source": "bandit"
+            }
+          ],
+          "meta": {
+            "mode": "bandit",
+            "bandit_count": 1,
+            "llm_count": 0,
+            "dropped_invalid_lines": 0,
+            "merged_count": 0,
+            "llm_error": null
+          },
+          "latency": 2.3438370996154845,
+          "error": null
+        }
+      ]
+    }
+  }
+}
