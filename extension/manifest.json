@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "AI Code Reviewer",
+  "version": "0.1.0",
+  "description": "Bôi đen code Python và nhờ AI review.",
+  "permissions": ["contextMenus", "sidePanel", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  }
+}
