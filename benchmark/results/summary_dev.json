@@ -1,0 +1,58 @@
+[
+  {
+    "mode": "bandit",
+    "split": "dev",
+    "repeats": 1,
+    "tolerance": 2,
+    "n_files": 30,
+    "metrics": {
+      "tp": 7.0,
+      "fp": 11.0,
+      "fn": 15.0,
+      "precision": 0.3888888888888889,
+      "recall": 0.3181818181818182,
+      "f1": 0.35000000000000003,
+      "fpr": 0.6,
+      "injection_pass": 3.0,
+      "recall_by_category": {
+        "bug": 0.0,
+        "quality": 0.0,
+        "security": 0.5833333333333334
+      },
+      "clean_flagged": 3,
+      "clean_total": 5,
+      "injection_total": 3
+    },
+    "per_repeat": [
+      {
+        "tp": 7,
+        "fp": 11,
+        "fn": 15,
+        "precision": 0.3888888888888889,
+        "recall": 0.3181818181818182,
+        "f1": 0.35000000000000003,
+        "fpr": 0.6,
+        "clean_flagged": 3,
+        "clean_total": 5,
+        "injection_pass": 3,
+        "injection_total": 3,
+        "recall_by_category": {
+          "bug": 0.0,
+          "quality": 0.0,
+          "security": 0.5833333333333334
+        },
+        "errors": 0,
+        "llm_errors": 0
+      }
+    ],
+    "latency": {
+      "n": 30,
+      "median": 2.3381619499996305,
+      "p95": 2.3723883599508553,
+      "mean": 2.3402886100423834
+    },
+    "errors": 0,
+    "llm_errors": 0,
+    "valid": true
+  }
+]
