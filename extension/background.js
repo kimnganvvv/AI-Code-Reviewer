@@ -5,6 +5,14 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "Review với AI Code Reviewer",
     contexts: ["selection"]
   });
+  
+  // Mở side panel khi nhấp vào biểu tượng extension
+  try {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  } catch (e) {
+    // API có thể không khả dụng trên một số phiên bản Chrome
+    console.warn("setPanelBehavior not available:", e);
+  }
 });
 
 // 2) Khi người dùng bấm vào menu đó
