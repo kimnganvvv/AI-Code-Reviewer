@@ -327,6 +327,50 @@ main {
   text-transform: uppercase;
 }
 
+.pane-head-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --- pane header action buttons (copy / download) --- */
+.pane-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.12s;
+  flex-shrink: 0;
+}
+.pane-action-btn svg {
+  width: 15px;
+  height: 15px;
+  pointer-events: none;
+}
+.pane-action-btn:hover {
+  background: rgba(122, 162, 255, .12);
+  border-color: rgba(122, 162, 255, .3);
+  color: #9dbcff;
+  transform: translateY(-1px);
+}
+.pane-action-btn:active {
+  transform: translateY(0) scale(0.93);
+  background: rgba(122, 162, 255, .2);
+}
+.pane-action-btn.copied {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, .35);
+  background: rgba(74, 222, 128, .1);
+}
+
 .pane-title {
   display: inline-flex;
   align-items: center;
@@ -345,7 +389,6 @@ main {
 .dot-result { background: var(--quality); color: var(--quality); }
 
 .count-badge {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -559,6 +602,113 @@ main {
   margin-bottom: 8px;
   color: var(--text-dim);
   font-size: 12px;
+}
+
+/* suggestion-row: suggestion text + apply button side by side */
+.suggestion-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.btn-apply {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid rgba(122, 162, 255, .35);
+  border-radius: 6px;
+  background: rgba(122, 162, 255, .08);
+  color: #9dbcff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.btn-apply:hover {
+  background: rgba(122, 162, 255, .18);
+  border-color: rgba(122, 162, 255, .6);
+  color: #c0d8ff;
+}
+.btn-apply:disabled {
+  cursor: default;
+  background: rgba(74, 222, 128, .1);
+  border-color: rgba(74, 222, 128, .35);
+  color: #4ade80;
+}
+
+/* card state: user navigated to this line */
+.issue.applied {
+  border-left-color: #4ade80 !important;
+  opacity: 0.75;
+}
+.issue.applied .issue-head .line {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* ---- inline fix editor on each issue card ---- */
+.fix-wrap {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-top: 1px solid rgba(255,255,255,.06);
+  padding-top: 8px;
+}
+.fix-label {
+  font-size: 10.5px;
+  color: var(--muted);
+  letter-spacing: .02em;
+}
+.fix-input {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid rgba(122, 162, 255, .25);
+  border-radius: 6px;
+  background: rgba(5, 10, 20, .7);
+  color: #c8d8ff;
+  font-family: "JetBrains Mono", Consolas, Monaco, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  box-sizing: border-box;
+  transition: border-color .15s;
+}
+.fix-input:focus {
+  outline: none;
+  border-color: rgba(122, 162, 255, .6);
+  background: rgba(5, 10, 25, .9);
+}
+.fix-input:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.fix-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.btn-reset-fix {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.btn-reset-fix:hover {
+  background: rgba(255,255,255,.06);
+  color: var(--text-dim);
 }
 
 .suggestion {
@@ -833,4 +983,182 @@ main {
     transition-duration: .001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+
+/* ============================================================
+   V3: bộ lọc dễ đọc, bộ đếm ký tự, tên file, thông báo lỗi
+   ============================================================ */
+
+select { color-scheme: dark; }
+
+/* Danh sách thả xuống: nền đặc để chữ luôn đọc được (nền trong suốt khiến tùy chọn bị trắng/mờ) */
+select option {
+  background-color: #0e1726;
+  color: #e9eff8;
+}
+
+/* Bộ lọc đang bật */
+select.is-active {
+  border-color: rgba(122, 162, 255, .75);
+  background-color: rgba(59, 130, 246, .16);
+  color: var(--text);
+  box-shadow: 0 0 0 2px rgba(122, 162, 255, .14);
+}
+
+.file-name {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.code-counter {
+  margin-left: auto;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .02);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.code-counter.over {
+  border-color: rgba(248, 113, 113, .5);
+  background: rgba(248, 113, 113, .12);
+  color: #ff8b86;
+}
+
+#meta.error { font-weight: 600; }
+
+/* ============================================================
+   V4: Lịch sử review - thẻ và nút có viền rõ ràng
+   ============================================================ */
+
+.history-list { gap: 12px; }
+
+.history-item {
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent-strong);
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .22);
+}
+
+.history-item:hover {
+  border-color: #3d5680;
+  border-left-color: var(--accent);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .32);
+}
+
+.history-item-actions { gap: 8px; }
+
+/* Cả 3 nút (Mở / Đổi tên / Xóa) đều có viền */
+.history-item-actions .btn {
+  min-height: 32px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .035);
+  box-shadow: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 650;
+  transition: transform var(--dur) ease, border-color var(--dur) ease,
+              background var(--dur) ease, color var(--dur) ease, box-shadow var(--dur) ease;
+}
+
+.history-item-actions .btn:hover {
+  transform: translateY(-1px);
+  border-color: #5d7fb8;
+  background: rgba(255, 255, 255, .08);
+  color: var(--text);
+}
+
+/* Mở: nhấn mạnh bằng màu xanh */
+.history-item-actions .btn:first-child {
+  border-color: rgba(59, 130, 246, .7);
+  background: rgba(59, 130, 246, .16);
+  color: #cfe0ff;
+}
+
+.history-item-actions .btn:first-child:hover {
+  border-color: #6aa0ff;
+  background: rgba(59, 130, 246, .3);
+  color: #fff;
+}
+
+/* Xóa: viền và nền đỏ nhạt */
+.history-item-actions .btn.danger {
+  border-color: rgba(248, 113, 113, .5);
+  background: rgba(248, 113, 113, .09);
+  color: #ff8b86;
+}
+
+.history-item-actions .btn.danger:hover {
+  border-color: rgba(248, 113, 113, .85);
+  background: rgba(248, 113, 113, .2);
+  color: #ffb0ac;
+}
+
+.history-item-actions .btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(122, 162, 255, .3);
+}
+
+/* Nút trong tiêu đề cửa sổ lịch sử */
+.modal-actions { gap: 8px; }
+
+.modal-actions .btn {
+  min-height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .035);
+}
+
+.modal-actions .btn:hover {
+  border-color: #5d7fb8;
+  background: rgba(255, 255, 255, .08);
+}
+
+.modal-actions .btn.danger {
+  border-color: rgba(248, 113, 113, .5);
+  background: rgba(248, 113, 113, .09);
+}
+
+.modal-actions .btn.danger:hover {
+  border-color: rgba(248, 113, 113, .85);
+  background: rgba(248, 113, 113, .2);
+}
+
+/* Màn hình hẹp: ba nút chia đều chiều ngang thẻ */
+@media (max-width: 720px) {
+  .history-item-actions .btn { flex: 1 1 0; }
+}
+/* ---- bản sửa đã áp dụng ---- */
+.CodeMirror .cm-fix-applied {
+  background: rgba(74, 222, 128, .16);
+  border-radius: 2px;
+}
+.fix-note {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.issue.applied .btn-reset-fix {
+  opacity: 1;
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, .35);
+}
+
+.fix-note.fix-warn {
+  color: #fbbf24;
 }

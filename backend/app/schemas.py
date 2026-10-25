@@ -27,6 +27,11 @@ class Issue(BaseModel):
     explanation: str = Field("", description="Nguyên nhân và luồng dữ liệu nguồn -> đích")
     suggestion: str = Field("", description="Mã đề xuất khắc phục")
     source: Source = Field(..., description="bandit | llm | both")
+    end_line: Optional[int] = Field(
+        None, ge=1,
+        description="Dòng cuối mà `suggestion` thay thế (suggestion thay các dòng line..end_line). "
+                    "Mặc định = line. Trường MỚI, tuỳ chọn, không phá tương thích.",
+    )
 
 
 class ReviewRequest(BaseModel):
@@ -45,8 +50,22 @@ class ReviewMeta(BaseModel):
     dropped_invalid_lines: int = 0
     merged_count: int = 0
     llm_error: Optional[str] = None
+    suppressed_count: int = Field(0, description="Số cảnh báo Bandit bị LLM loại là báo động giả")
+    rejected_suggestions: int = Field(0, description="Số bản vá bị loại do hỏng cú pháp hoặc no-op")
 
 
 class ReviewResponse(BaseModel):
     issues: List[Issue]
     meta: ReviewMeta
+
+
+class PatchVerification(BaseModel):
+    """Kết quả kiểm tra lại bản vá bằng unit test (llm_client.llm_verify_patch)."""
+
+    verdict: Literal["VERIFIED_PASS", "REJECTED_REGRESSION", "INCONCLUSIVE"]
+    explanation: str = ""
+    defect_addressed: Literal["yes", "no", "unclear"] = "unclear"
+    passed_tests: Optional[int] = None
+    failed_tests: Optional[int] = None
+    verdict_source: str = Field("llm", description="test_runner nếu verdict do code quyết định | llm")
+    parse_error: bool = False

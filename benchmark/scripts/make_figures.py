@@ -2,13 +2,16 @@
 import argparse
 import json
 import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.dataset import load_dataset  # noqa: E402
-from src.report import MODE_ORDER, evaluate, format_table, plot_all  # noqa: E402
+from src.dataset import load_dataset
+from src.report import MODE_ORDER, evaluate, format_table, plot_all
 
 
 def latest_per_mode(raw_dir: Path, split: str):

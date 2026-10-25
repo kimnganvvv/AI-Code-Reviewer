@@ -74,32 +74,28 @@ function refresh() {
 }
 
 async function analyze(code) {
-  if (code) {
-    const normalized = normalizeCode(code);
-    if (!normalized) {
-      setStatus("Không có code để phân tích");
-      codeBox.hidden = true;
-      listEl.replaceChildren();
-      summaryEl.textContent = "";
-      allIssues = [];
-      return;
-    }
-    codeEl.textContent = normalized;
-    codeBox.hidden = false;
+  const normalized = normalizeCode(code);
+  if (!normalized) {
+    setStatus("Không có code để phân tích");
+    codeBox.hidden = true;
+    listEl.replaceChildren();
+    summaryEl.textContent = "";
+    allIssues = [];
+    return;
   }
+  codeEl.textContent = normalized;
+  codeBox.hidden = false;
+
   setStatus("Đang phân tích...");
   listEl.replaceChildren();
   summaryEl.textContent = "";
   try {
     const settings = await getSettings();
-    if (code) {
-      const normalized = normalizeCode(code);
-      if (normalized.length > maxCodeLength) {
-        setStatus(`Code quá dài (${normalized.length} ký tự, giới hạn ${maxCodeLength})`, true);
-        return;
-      }
+    if (normalized.length > maxCodeLength) {
+      setStatus(`Code quá dài (${normalized.length} ký tự, giới hạn ${maxCodeLength})`, true);
+      return;
     }
-    const result = await reviewCode(code, { mode: settings.mode });
+    const result = await reviewCode(normalized, { mode: settings.mode });
     allIssues = result.issues;
     const modeLabel = result.meta?.mode || settings.mode;
     let statusText = `Hoàn tất (${modeLabel}) · ${allIssues.length} lỗi`;

@@ -117,45 +117,76 @@ def merge_duplicates(issues: List[dict]) -> Tuple[List[dict], int]:
     return merged, mcount
 
 
-# 3) Chuẩn hóa output LLM
-def sanitize_llm_issues(raw: List[dict] | None) -> List[dict]:
-    clean: List[dict] = []
-    for item in raw or []:
-        if not isinstance(item, dict):
-            continue
-        try:
-            line = int(item.get("line"))
-        except (TypeError, ValueError):
-            line = 0
+# 3) Chuyển kết quả LLM (contract bandit_verdicts + new_issues) sang Issue
+def bandit_view(b_issues: List[dict]) -> List[dict]:
+    """Đổi issue Bandit (định dạng Issue + _test_id) sang trường Bandit chuẩn mà prompt mong đợi.
 
-        t = str(item.get("type", "quality")).lower().strip()
-        if t not in VALID_TYPE:
-            t = "quality"
-        sev = str(item.get("severity", "medium")).lower().strip()
-        if sev not in VALID_SEV:
-            sev = "medium"
-        conf = str(item.get("confidence", "low")).lower().strip()
-        if conf not in VALID_SEV:
-            conf = "low"
-        src = str(item.get("source", "llm")).lower().strip()
-        if src not in ("bandit", "llm", "both"):
-            src = "llm"
-        cwe = item.get("cwe_id")
-        if cwe is not None:
-            cwe = str(cwe).strip() or None
-
-        clean.append({
-            "line": line,
-            "type": t,
-            "severity": sev,
-            "confidence": conf,
-            "cwe_id": cwe,
-            "message": str(item.get("message", "")).strip(),
-            "explanation": str(item.get("explanation", "")).strip(),
-            "suggestion": str(item.get("suggestion", "")).strip(),
-            "source": src,
+    Bắt buộc có test_id và line_number: BANDIT ADJUDICATION GUIDE trong prompt dựa vào test_id.
+    finding_id B1, B2... do prompts.assign_bandit_finding_ids gán theo đúng thứ tự danh sách này.
+    """
+    view = []
+    for b in b_issues:
+        view.append({
+            "test_id": b.get("_test_id") or b.get("test_id"),
+            "line_number": b.get("line") if b.get("line") is not None else b.get("line_number"),
+            "issue_text": b.get("message") or b.get("issue_text") or "",
+            "issue_severity": str(b.get("severity") or b.get("issue_severity") or "").upper(),
+            "issue_confidence": str(b.get("confidence") or b.get("issue_confidence") or "").upper(),
+            "cwe_id": b.get("cwe_id"),
         })
-    return clean
+    return view
+
+
+def apply_bandit_verdicts(b_issues: List[dict], verdicts: List[dict]) -> Tuple[List[dict], int]:
+    """Áp phán quyết của LLM lên cảnh báo Bandit.
+
+    - keep=false            -> loại (báo động giả), đếm vào suppressed.
+    - keep=true             -> giữ, source='both', dùng explanation (và bản vá hợp lệ) của LLM.
+    - không có verdict / auto_default -> giữ nguyên source='bandit' (an toàn hơn là bỏ sót).
+    Bản vá chỉ được nhận khi khoảng dòng của nó bao trùm dòng Bandit báo.
+    """
+    by_id = {v.get("finding_id"): v for v in verdicts or []}
+    kept: List[dict] = []
+    suppressed = 0
+    for idx, b in enumerate(b_issues, start=1):
+        item = dict(b)
+        item.setdefault("end_line", item.get("line"))
+        v = by_id.get(f"B{idx}")
+        if v is None or v.get("auto_default"):
+            kept.append(item)
+            continue
+        if not v.get("keep", True):
+            suppressed += 1
+            continue
+
+        item["source"] = "both"
+        if v.get("explanation"):
+            item["explanation"] = v["explanation"]
+        sug, v_line, v_end, b_line = v.get("suggestion"), v.get("line"), v.get("end_line"), item.get("line")
+        if sug and v_line is not None and v_end is not None and b_line is not None and v_line <= b_line <= v_end:
+            item["suggestion"] = sug
+            item["line"], item["end_line"] = v_line, v_end
+        kept.append(item)
+    return kept, suppressed
+
+
+def new_issue_to_issue(n: dict) -> dict:
+    """new_issue đã validate -> dict đúng schema Issue (source='llm')."""
+    cwe = n.get("cwe_id")
+    if not cwe or str(cwe).upper() == "N/A":
+        cwe = None
+    return {
+        "line": n["line"],
+        "end_line": n.get("end_line") or n["line"],
+        "type": n["type"],
+        "severity": n["severity"],
+        "confidence": n["confidence"],
+        "cwe_id": cwe,
+        "message": n["message"],
+        "explanation": n["explanation"],
+        "suggestion": n.get("suggestion") or "",
+        "source": "llm",
+    }
 
 
 # 4) Entry point: chạy theo 1 trong 3 chế độ đo
@@ -164,21 +195,32 @@ def review_code(code: str, mode: str = "hybrid") -> dict:
 
     - bandit : chỉ chạy SAST, không gọi LLM (nhanh, rẻ, ít false positive logic).
     - llm    : chỉ gọi LLM, không chạy Bandit (dùng để đo khả năng thuần LLM).
-    - hybrid : chạy Bandit rồi nhúng kết quả vào 1 lượt LLM (mặc định).
+    - hybrid : chạy Bandit rồi nhúng kết quả vào 1 lượt LLM; LLM phán quyết từng cảnh báo
+               Bandit (bandit_verdicts) và báo thêm lỗi Bandit bỏ sót (new_issues).
+
+    Nếu LLM lỗi ở chế độ hybrid, vẫn trả kết quả Bandit thô (source='bandit') kèm meta.llm_error.
     """
     mode = normalize_mode(mode)
     b_issues: List[dict] = []
     l_issues: List[dict] = []
     l_err = None
+    suppressed = 0
+    rejected = 0
+    llm_dropped = 0
 
     if mode in ("bandit", "hybrid"):
         b_issues = run_bandit(code)
+    bandit_total = len(b_issues)
 
     if mode in ("llm", "hybrid"):
         if llm_is_configured():
             try:
-                raw = llm_review(code, b_issues, prompts.SYSTEM_PROMPT, prompts.build_review_prompt)
-                l_issues = sanitize_llm_issues(raw)
+                result = llm_review(code, bandit_view(b_issues), prompts.SYSTEM_PROMPT, prompts.build_review_prompt)
+                if b_issues:
+                    b_issues, suppressed = apply_bandit_verdicts(b_issues, result["bandit_verdicts"])
+                l_issues = [new_issue_to_issue(n) for n in result["new_issues"]]
+                rejected = result.get("rejected_suggestions", 0)
+                llm_dropped = result.get("dropped_new_issues", 0)  # ảo giác dòng/evidence đã bị parser loại
             except LLMError as e:
                 l_err = str(e)
                 log.warning("LLM thất bại (mode=%s): %s", mode, e)
@@ -190,7 +232,21 @@ def review_code(code: str, mode: str = "hybrid") -> dict:
 
     all_issues = b_issues + l_issues
     valid, dropped = validate_lines(all_issues, code)
+    dropped += llm_dropped
     merged, mcount = merge_duplicates(valid)
 
-    merged.sort(key=lambda x: (x.get("line", 0), SEV_RANK.get(x.get("severity"), 9)))
-    return {"issues": merged, "meta": {"mode": mode, "bandit_count": len(b_issues), "llm_count": len(l_issues), "dropped_invalid_lines": dropped, "merged_count": mcount, "llm_error": l_err}}
+    # Cùng dòng: mức nghiêm trọng cao xếp trước
+    merged.sort(key=lambda x: (x.get("line", 0), -SEV_RANK.get(x.get("severity"), 0)))
+    return {
+        "issues": merged,
+        "meta": {
+            "mode": mode,
+            "bandit_count": bandit_total,
+            "llm_count": len(l_issues),
+            "dropped_invalid_lines": dropped,
+            "merged_count": mcount,
+            "llm_error": l_err,
+            "suppressed_count": suppressed,
+            "rejected_suggestions": rejected,
+        },
+    }
