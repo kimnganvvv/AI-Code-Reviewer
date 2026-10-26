@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "description": "Chọn đoạn code Python trên bất kỳ trang web nào → chuột phải → 'Review với AI Code Reviewer'. Side panel hiển thị lỗi bảo mật, bug, chất lượng code từ Bandit + LLM. Cũng có thể dán code thủ công vào ô nhập liệu.",
   "permissions": [
+    "activeTab",
     "contextMenus",
+    "scripting",
     "sidePanel",
     "storage"
   ],
@@ -14,7 +16,8 @@
     "https://*.onrender.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "side_panel": {
     "default_path": "sidepanel/sidepanel.html"

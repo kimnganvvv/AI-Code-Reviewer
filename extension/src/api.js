@@ -22,17 +22,6 @@ function mapError(status) {
   return `Lỗi HTTP ${status}`;
 }
 
-export function normalizeCode(code) {
-  if (!code) return "";
-  return code
-    .replace(/\u00a0/g, " ")
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((line) => line.replace(/\s+$/, ""))
-    .join("\n")
-    .replace(/^\n+|\n+$/g, "");
-}
-
 export async function reviewCode(code, { mode = "hybrid", signal } = {}) {
   if (currentController) {
     currentController.abort();
@@ -40,7 +29,11 @@ export async function reviewCode(code, { mode = "hybrid", signal } = {}) {
   const controller = new AbortController();
   currentController = controller;
 
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
+  let timedOut = false;
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 120000);
 
   try {
     if (USE_MOCK) {
@@ -69,6 +62,7 @@ export async function reviewCode(code, { mode = "hybrid", signal } = {}) {
     return normalizeResponse(data);
   } catch (err) {
     if (err.name === "AbortError" || err.name === "CancellationError") {
+      if (timedOut) throw new Error("Máy chủ phản hồi quá lâu, thử lại sau");
       throw new Error("cancelled");
     }
     if (err.message === "Failed to fetch" || err.name === "TypeError") {
@@ -83,13 +77,28 @@ export async function reviewCode(code, { mode = "hybrid", signal } = {}) {
   }
 }
 
+export function cancelReview() {
+  if (currentController) {
+    currentController.abort();
+    currentController = null;
+  }
+}
+
 export async function getHealth() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 4000);
+
   try {
     const baseUrl = API_URL.replace(/\/review\/?$/, "");
-    const res = await fetch(`${baseUrl}/health`, { method: "GET" });
+    const res = await fetch(`${baseUrl}/health`, {
+      method: "GET",
+      signal: controller.signal
+    });
     if (!res.ok) return null;
     return await res.json();
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

@@ -1,63 +1,109 @@
-<!doctype html>
-<html lang="vi">
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Code Reviewer</title>
+  <link rel="stylesheet" href="../src/tokens.css">
+  <link rel="stylesheet" href="../src/components.css">
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
+  <div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
+
   <header>
-    <h1>AI Code Reviewer</h1>
-    <p id="status" class="status">Hãy bôi đen code rồi chuột phải để review.</p>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z"></path>
+          <path d="M12 12 20 7.5"></path>
+          <path d="M12 12v9"></path>
+          <path d="M12 12 4 7.5"></path>
+          <path d="m9 12 2 2 4-4"></path>
+        </svg>
+      </div>
+      <h1>AI Code Reviewer</h1>
+    </div>
+    <div class="header-right">
+      <button id="health-pill" class="pill status-pill is-checking" type="button" title="Bấm để kiểm tra lại kết nối">
+        <span class="pill-dot" aria-hidden="true"></span>
+        <span id="health-pill-text">Đang kiểm tra…</span>
+      </button>
+      <select id="theme-select" class="btn btn-secondary btn-sm" title="Chủ đề" aria-label="Chủ đề">
+        <option value="auto">Tự động</option>
+        <option value="dark">Tối</option>
+        <option value="light">Sáng</option>
+      </select>
+    </div>
   </header>
 
-  <details id="code-box" class="code-box" hidden>
-    <summary>Code đã nhận</summary>
-    <pre id="code"></pre>
-  </details>
+  <main>
+    <section class="input-section">
+      <label class="label">Code Python cần review</label>
+      <div class="textarea-wrap">
+        <textarea id="code-input" placeholder="Dán code Python vào đây" spellcheck="false" rows="8"></textarea>
+        <div class="textarea-stats">
+          <span id="code-counter">0 ký tự</span>
+          <span id="code-limit" class="code-limit">20.000 ký tự</span>
+        </div>
+      </div>
 
-  <section class="input-area">
-    <textarea id="code-input" placeholder="Dán code Python vào đây" spellcheck="false"></textarea>
-    <div class="input-actions">
-      <button id="btn-analyze" type="button">Phân tích</button>
-      <button id="btn-clear" type="button">Xoá</button>
-      <a id="open-web" href="#" target="_blank" rel="noopener">Mở bản đầy đủ trên Web</a>
-    </div>
-  </section>
+      <section class="controls">
+        <label>Chế độ review
+          <select id="mode-select" class="seg">
+            <option value="bandit">Bandit</option>
+            <option value="llm">LLM</option>
+            <option value="hybrid" selected>Hybrid · Khuyên dùng</option>
+          </select>
+        </label>
+      </section>
 
-  <section class="controls">
-    <label>Chế độ review
-      <select id="mode-select">
-        <option value="bandit">Bandit</option>
-        <option value="llm">LLM</option>
-        <option value="hybrid" selected>Hybrid</option>
-      </select>
-    </label>
-    <p id="mode-hint" class="hint" hidden></p>
-  </section>
+      <div class="actions">
+        <button id="btn-analyze" class="btn btn-primary btn-lg">Phân tích</button>
+        <button id="btn-clear" class="btn btn-secondary">Xoá</button>
+        <a id="open-web" href="#" target="_blank" rel="noopener" class="btn btn-secondary">Mở bản đầy đủ trên Web ↗</a>
+      </div>
+    </section>
 
-  <section class="filters">
-    <label>Mức nghiêm trọng
-      <select id="filter-severity">
-        <option value="all">Tất cả</option>
-        <option value="high">High</option>
-        <option value="medium">Medium</option>
-        <option value="low">Low</option>
-      </select>
-    </label>
-    <label>Độ tin cậy
-      <select id="filter-confidence">
-        <option value="all">Tất cả</option>
-        <option value="high">High</option>
-        <option value="medium">Medium</option>
-        <option value="low">Low</option>
-      </select>
-    </label>
-  </section>
+    <section class="results">
+      <div id="result-controls" class="results-header" hidden>
+        <div class="result-filters">
+          <select id="filter-type" class="chip">
+            <option value="all">Tất cả loại</option>
+            <option value="security">Security</option>
+            <option value="bug">Bug</option>
+            <option value="quality">Quality</option>
+          </select>
+          <select id="filter-severity" class="chip">
+            <option value="all">Tất cả mức độ</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <select id="filter-confidence" class="chip">
+            <option value="all">Tất cả tin cậy</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <span id="result-count" class="result-count">0 lỗi</span>
+      </div>
 
-  <p id="summary" class="summary"></p>
-  <main id="issues"></main>
+      <div id="banner" class="banner-host"></div>
+
+      <section id="offline-guide" class="offline-guide" aria-labelledby="offline-title" hidden>
+        <div id="offline-title" class="guide-title">Chưa kết nối máy chủ</div>
+        <p class="guide-text">Khởi động backend rồi bấm vào trạng thái ở góc trên để kiểm tra lại.</p>
+        <div class="guide-command-wrap">
+          <pre class="guide-command"><code id="server-command">python -m uvicorn app.main:app --app-dir backend --port 8000</code></pre>
+          <button id="copy-command" class="btn btn-secondary" type="button">Sao chép</button>
+        </div>
+      </section>
+
+      <div id="issues" class="issues-list"></div>
+    </section>
+  </main>
 
   <script type="module" src="sidepanel.js"></script>
 </body>
