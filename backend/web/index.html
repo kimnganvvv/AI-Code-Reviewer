@@ -6,8 +6,7 @@
   <title>AI Code Reviewer — Hybrid SAST + LLM</title>
   <link rel="icon" type="image/x-icon" href="favicon.ico" />
   <link rel="stylesheet" href="static/vendor/codemirror.min.css" />
-  <link rel="stylesheet" href="static/vendor/material-darker.min.css" />
-  <link rel="stylesheet" href="static/css/app.css?v=3" />
+  <link rel="stylesheet" href="static/css/app.css?v=6" />
 </head>
 <body>
 
@@ -58,33 +57,45 @@
     <input type="file" id="fileInput" accept=".py,.txt,text/*" style="display: none;" />
 
     <div class="control">
-      <select id="fMode" title="Chế độ review" aria-label="Chế độ review">
-        <option value="hybrid">Hybrid · Bandit + LLM</option>
-        <option value="bandit">Chỉ Bandit (SAST)</option>
-        <option value="llm">Chỉ LLM</option>
-      </select>
+      <div class="select-wrap">
+        <select id="fMode" title="Chế độ review" aria-label="Chế độ review">
+          <option value="hybrid">Hybrid · Bandit + LLM</option>
+          <option value="bandit">Chỉ Bandit (SAST)</option>
+          <option value="llm">Chỉ LLM</option>
+        </select>
+        <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+      </div>
     </div>
   </div>
 
   <div class="toolbar-filters">
-    <select id="fType" aria-label="Lọc theo loại lỗi">
-      <option value="">Tất cả loại</option>
-      <option value="security">Security</option>
-      <option value="bug">Bug</option>
-      <option value="quality">Quality</option>
-    </select>
-    <select id="fSeverity" aria-label="Lọc theo mức độ">
-      <option value="">Mức độ</option>
-      <option value="high">High</option>
-      <option value="medium">Medium</option>
-      <option value="low">Low</option>
-    </select>
-    <select id="fConfidence" aria-label="Lọc theo độ tin cậy">
-      <option value="">Độ tin cậy</option>
-      <option value="high">High</option>
-      <option value="medium">Medium</option>
-      <option value="low">Low</option>
-    </select>
+    <div class="select-wrap">
+      <select id="fType" aria-label="Lọc theo loại lỗi">
+        <option value="">Tất cả loại</option>
+        <option value="security">Security</option>
+        <option value="bug">Bug</option>
+        <option value="quality">Quality</option>
+      </select>
+      <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+    </div>
+    <div class="select-wrap">
+      <select id="fSeverity" aria-label="Lọc theo mức độ">
+        <option value="">Mức độ</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+      <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+    </div>
+    <div class="select-wrap">
+      <select id="fConfidence" aria-label="Lọc theo độ tin cậy">
+        <option value="">Độ tin cậy</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+      <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+    </div>
     <button id="btnReset" class="btn ghost" type="button" title="Xóa tất cả bộ lọc">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="pointer-events:none;">
         <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
@@ -177,6 +188,6 @@
 
 <script src="static/vendor/codemirror.min.js"></script>
 <script src="static/vendor/python.min.js"></script>
-<script src="static/js/app.js?v=3"></script>
+  <script src="static/js/app.js?v=5"></script>
 </body>
 </html>
