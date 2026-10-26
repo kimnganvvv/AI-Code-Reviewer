@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Protocol
+from typing import Protocol
 
 import requests
 
@@ -13,7 +13,7 @@ class ReviewResult:
     issues: list = field(default_factory=list)
     meta: dict = field(default_factory=dict)
     latency: float = 0.0
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ReviewClient(Protocol):

@@ -16,6 +16,7 @@ function normalizeResponse(data) {
 }
 
 function mapError(status) {
+  if (status === 400) return "Mã nguồn trống hoặc không hợp lệ";
   if (status === 413) return "Code quá dài so với giới hạn của máy chủ";
   if (status === 422) return "Chế độ review không hợp lệ";
   if (status >= 500) return "Máy chủ gặp lỗi, thử lại sau";

@@ -56,6 +56,14 @@ def index():
     return FileResponse(idx)
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    ico = WEB_DIR / "favicon.ico"
+    if not ico.exists():
+        raise HTTPException(status_code=404, detail="Không tìm thấy favicon.ico")
+    return FileResponse(ico)
+
+
 @app.get("/sample")
 def sample():
     return {"code": SAMPLE_CODE}

@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 import app.main as main_module
 from app.main import app
+from app.mock_data import SAMPLE_CODE, mock_issues
 
 client = TestClient(app)
 
@@ -73,6 +74,19 @@ def test_mock_review_contract():
         assert it["severity"] in {"high", "medium", "low"}
         assert it["confidence"] in {"high", "medium", "low"}
         assert it["source"] in {"bandit", "llm", "both"}
+
+
+def test_mock_issues_point_to_real_sample_lines():
+    """Mock phải trỏ đúng dòng trong SAMPLE_CODE để highlight 2 chiều hoạt động."""
+    lines = SAMPLE_CODE.splitlines()
+    by_line = {issue["line"]: issue for issue in mock_issues()}
+
+    assert set(by_line) == {2, 5, 9, 14, 18}
+    assert "import sqlite3" in lines[2 - 1]
+    assert "PASSWORD" in lines[5 - 1]
+    assert "SELECT" in lines[9 - 1]
+    assert "subprocess.call" in lines[14 - 1]
+    assert "len(values)" in lines[18 - 1]
 
 
 def test_review_empty_code():

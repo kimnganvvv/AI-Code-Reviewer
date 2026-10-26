@@ -1,15 +1,18 @@
 """Chạy đo: python scripts/run_benchmark.py --modes bandit llm hybrid"""
 import argparse
 import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.client import HttpReviewClient  # noqa: E402
-from src.dataset import load_dataset  # noqa: E402
-from src.report import evaluate, format_table  # noqa: E402
-from src.runner import run_benchmark, save_run  # noqa: E402
+from src.client import HttpReviewClient
+from src.dataset import load_dataset
+from src.report import evaluate, format_table
+from src.runner import run_benchmark, save_run
 
 
 def main():

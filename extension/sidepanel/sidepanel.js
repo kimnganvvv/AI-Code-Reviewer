@@ -308,6 +308,7 @@ async function analyze(code) {
   hideBanner();
 
   try {
+
     const result = await reviewCode(normalized, { mode: settings.mode });
     allIssues = result.issues;
     const modeLabel = result.meta?.mode || settings.mode;

@@ -26,7 +26,6 @@ LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0"))
 
 # Đường dẫn
 WEB_DIR = BASE_DIR / "web"
-STATIC_DIR = WEB_DIR / "static"
 
 
 def llm_is_configured() -> bool:
