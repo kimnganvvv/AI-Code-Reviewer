@@ -107,15 +107,3 @@ python -m mypy backend/app          # 5 errors (dict get with Any|None keys)
 | Port 8000 busy | Use `--port 8001` |
 | LLM not configured | Set `LLM_API_KEY` in `.env`, restart server |
 | `422` on `/review` | `mode` must be `bandit`, `llm`, or `hybrid` |
-
-## Phần Người 2: extension/ và benchmark/ (QUY TẮC RIÊNG)
-
-- Nhánh làm việc: feature/person2-extension-benchmark. Không commit vào main.
-- Chỉ được sửa trong extension/ và benchmark/. KHÔNG sửa backend/, backend/app/prompts.py, docs/API_CONTRACT.md. Nếu cần họ đổi, báo lại thay vì tự sửa.
-- Các lệnh Lint/Type check ở trên CHỈ áp dụng cho backend/. Không chạy mypy sửa backend, không sửa 35 cảnh báo ruff của backend.
-- Với phần của mình: `python -m ruff check benchmark` phải sạch (dùng --fix nếu cần).
-- Test của benchmark: `cd benchmark; python -m pytest` (22 test). Chạy `python -m pytest` ở gốc sẽ chạy cả backend/tests và benchmark/tests (tổng 38).
-- Extension: Chrome MV3, JS thuần, không bundler. Dữ liệu từ LLM luôn gán bằng textContent, không dùng innerHTML. Màu thẻ lỗi lấy từ backend/web/index.html để đồng bộ.
-- API: POST /review?mode=bandit|llm|hybrid trả {"issues": [...], "meta": {...}}. meta.llm_error có nghĩa kết quả LLM/hybrid KHÔNG hợp lệ để đo.
-- Benchmark chấm theo type + số dòng (dung sai ±2, also_lines, end_line); CWE không bắt buộc. Không sửa matching.py hay metrics.py nếu không được yêu cầu.
-- Đọc file hiện có trước khi sửa, không ghi đè mà không báo. Kết thúc mỗi tác vụ: liệt kê file đã đổi, lệnh kiểm tra đã chạy và kết quả.
