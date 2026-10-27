@@ -16,12 +16,37 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // 2) Khi người dùng bấm vào menu đó
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "review-code") return;
 
   // Mở khung bên phải NGAY (phải gọi ngay trong lúc xử lý click)
-  chrome.sidePanel.open({ tabId: tab.id });
+  await chrome.sidePanel.open({ tabId: tab.id });
 
-  // Lưu đoạn chữ bôi đen để side panel đọc
-  chrome.storage.session.set({ pendingCode: info.selectionText });
+  // Lấy lựa chọn từ trang (giữ nguyên xuống dòng, thụt lề)
+  let code = "";
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      func: () => window.getSelection().toString()
+    });
+    // Gộp kết quả từ các frame, chọn chuỗi không rỗng dài nhất
+    const selections = results
+      .map(r => r.result)
+      .filter(s => typeof s === "string" && s.trim().length > 0);
+    if (selections.length > 0) {
+      code = selections.reduce((a, b) => a.length >= b.length ? a : b);
+    }
+  } catch (e) {
+    console.warn("executeScript failed, fallback to info.selectionText:", e);
+  }
+  
+  // Fallback nếu executeScript lỗi hoặc rỗng
+  if (!code && info.selectionText) {
+    code = info.selectionText;
+  }
+
+  // Lưu đoạn code để side panel đọc
+  if (code) {
+    await chrome.storage.session.set({ pendingCode: code });
+  }
 });

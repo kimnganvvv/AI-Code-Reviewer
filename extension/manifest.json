@@ -3,16 +3,10 @@
   "name": "AI Code Reviewer",
   "version": "0.1.0",
   "description": "Chọn đoạn code Python trên bất kỳ trang web nào → chuột phải → 'Review với AI Code Reviewer'. Side panel hiển thị lỗi bảo mật, bug, chất lượng code từ Bandit + LLM. Cũng có thể dán code thủ công vào ô nhập liệu.",
-  "permissions": [
-    "contextMenus",
-    "sidePanel",
-    "storage"
-  ],
-  "host_permissions": [
-    "http://localhost:8000/*",
-    "http://127.0.0.1:8000/*",
-    "https://*.onrender.com/*"
-  ],
+
+  "permissions": ["contextMenus", "sidePanel", "storage", "scripting", "activeTab"],
+  "host_permissions": ["http://localhost:8000/*"],
+
   "background": {
     "service_worker": "background.js"
   },
