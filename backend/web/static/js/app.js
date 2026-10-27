@@ -229,9 +229,12 @@
     isBusy = busy;
     if (cm) cm.setOption("readOnly", busy);
     if (editorTextarea) editorTextarea.readOnly = busy;
-    if (els.upload) els.upload.disabled = busy;
-    if (els.fileInput) els.fileInput.disabled = busy;
-    if (els.mode) els.mode.disabled = busy;
+    [els.upload, els.fileInput, els.mode].forEach(function (node) {
+      if (!node) return;
+      node.disabled = busy;
+      if (busy) node.setAttribute("aria-disabled", "true");
+      else node.removeAttribute("aria-disabled");
+    });
     syncRunButton();
   }
 
@@ -1159,8 +1162,17 @@
   if (els.reset) els.reset.addEventListener("click", resetFilters);
 
   if (els.upload && els.fileInput) {
-    els.upload.addEventListener("click", function () { els.fileInput.click(); });
-    els.fileInput.addEventListener("change", function () { window.__handleFileInput(els.fileInput); });
+    els.upload.addEventListener("click", function () {
+      if (isBusy) return;
+      els.fileInput.click();
+    });
+    els.fileInput.addEventListener("change", function () {
+      if (isBusy) {
+        try { els.fileInput.value = ""; } catch (_) {}
+        return;
+      }
+      window.__handleFileInput(els.fileInput);
+    });
   }
 
   if (els.history) els.history.addEventListener("click", function () { openHistoryModal(); });

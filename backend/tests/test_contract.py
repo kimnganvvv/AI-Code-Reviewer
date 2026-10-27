@@ -71,7 +71,7 @@ def test_web_and_static_assets_are_served():
     page = client.get("/")
     assert page.status_code == 200
     assert 'id="fMode"' in page.text
-    assert "static/js/app.js?v=10" in page.text
+    assert "static/js/app.js?v=11" in page.text
 
     for path in (
         "/static/css/app.css",
