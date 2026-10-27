@@ -34,7 +34,8 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
       "message": "Possible SQL injection through string concatenation",
       "explanation": "Dữ liệu người dùng được nối trực tiếp vào câu SQL.",
       "suggestion": "conn.execute('SELECT * FROM users WHERE id = ?', (user_id,))",
-      "source": "both"
+      "source": "both",
+      "end_line": 3
     }
   ],
   "meta": {
@@ -43,7 +44,9 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
     "llm_count": 6,
     "dropped_invalid_lines": 1,
     "merged_count": 2,
-    "llm_error": null
+    "llm_error": null,
+    "suppressed_count": 1,
+    "rejected_suggestions": 0
   }
 }
 ```
@@ -53,7 +56,20 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
 - `mode=llm`: chỉ chạy LLM, `bandit_count = 0`; nếu LLM chưa cấu hình thì `issues = []` và `llm_error` có thông báo.
 - `mode=hybrid`: chạy cả hai; nếu LLM lỗi/chưa cấu hình thì vẫn trả kết quả Bandit kèm `llm_error`.
 
-## 2. Cấu trúc `Issue` (10 trường bắt buộc)
+Các khóa của `meta` (theo `ReviewMeta`):
+
+| Trường | Kiểu | Mặc định | Mô tả |
+|---|---|---|---|
+| `mode` | `string` | — | `bandit` \| `llm` \| `hybrid` \| `mock` |
+| `bandit_count` | `int` | `0` | Số cảnh báo Bandit ban đầu, trước phán quyết của LLM |
+| `llm_count` | `int` | `0` | Số `new_issue` mới do LLM trả về (không tính `bandit_verdicts`) |
+| `dropped_invalid_lines` | `int` | `0` | Số issue bị loại bởi Line Validation/guardrail parse (dòng hoặc evidence không hợp lệ, trùng, vượt giới hạn...) |
+| `merged_count` | `int` | `0` | Số lần gộp issue trùng |
+| `llm_error` | `string` \| `null` | `null` | Lỗi/cấu hình LLM nếu có |
+| `suppressed_count` | `int` | `0` | Số cảnh báo Bandit bị LLM loại là báo động giả |
+| `rejected_suggestions` | `int` | `0` | Số bản vá bị loại do hỏng cú pháp hoặc no-op |
+
+## 2. Cấu trúc `Issue` (10 trường; `end_line` tuỳ chọn)
 
 | Trường | Kiểu | Giá trị | Mô tả |
 |---|---|---|---|
@@ -65,7 +81,8 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
 | `message` | `string` | — | Tiêu đề ngắn gọn |
 | `explanation` | `string` | — | Nguyên nhân + luồng dữ liệu nguồn->đích |
 | `suggestion` | `string` | — | Mã đề xuất sửa |
-| `source` | `string` | `bandit` \| `llm` \| `both` | Nguồn phát hiện. `both` = cả hai cùng xác nhận |
+| `source` | `string` | `bandit` \| `llm` \| `both` | Nguồn phát hiện. `both` được đặt khi LLM xác nhận cảnh báo Bandit hoặc khi gộp issue; pipeline hiện tại cũng đặt `both` khi gộp cùng nguồn (LLM–LLM, Bandit–Bandit), nên không dùng `both` để suy ra chắc chắn có đủ hai nguồn |
+| `end_line` | `int` \| `null` (>=1) | — | Dòng cuối mà `suggestion` thay thế (`line..end_line`). Tuỳ chọn; `null`/không có = dòng đơn `line` |
 
 ## 3. Các endpoint khác
 
@@ -93,17 +110,19 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
 
 ### 5.1 Quy tắc gộp trùng (Merge/Dedup)
 
-Khi cả Bandit và LLM phát hiện cùng 1 lỗi, nếu không gộp thì UI hiện 2 thẻ trùng nhau → user mất niềm tin. Quy tắc ghép (theo thứ tự ưu tiên):
+`merge_duplicates()` là heuristic (không phải bằng chứng chắc chắn hai issue là cùng một lỗi). Quy tắc ghép:
 
-1. **Khác nguồn** (Bandit vs LLM) — mới được gộp:
-   - **Cùng `cwe_id` và lệch dòng ≤ 1** → cùng một lỗi.
-   - **Trùng dòng + trùng `type`** (security/bug) → cùng một lỗi.
+1. **Bandit–Bandit**: chỉ gộp khi cùng `test_id` và cùng `line`.
+   → Nếu không có điều kiện này, `import subprocess` (B404) và `shell=True` (B602) ở cùng dòng sẽ bị gộp nhầm.
+2. **LLM–LLM**: chỉ gộp khi cả hai có **cùng `cwe_id` khác `null`** và **cùng `line`**.
+   → Không dùng fallback theo `type`/`message`; thiếu `cwe_id` hoặc lệch dòng thì giữ riêng.
+3. **Nguồn mới chưa có trong issue đích** (thường là Bandit–LLM):
+   - **Cùng `cwe_id` khác `null` và lệch dòng ≤ 1** → cùng một lỗi.
+   - **Trùng dòng + trùng `type`** (`security`/`bug`) → cùng một lỗi.
    - **Trùng dòng + ≥ 40% từ khóa chung** trong `message` → cùng một lỗi (fallback).
-2. **Cùng nguồn** — chỉ gộp khi *thực sự là cùng một quy tắc* (cùng `test_id` của Bandit).
-   → Nếu không có điều kiện này, `import subprocess` (B404) và `shell=True` (B602) ở cùng dòng 1 sẽ bị gộp nhầm thành 1 lỗi.
 
 Khi gộp:
-- `source` → `"both"` (chỉ nghĩa rõ ràng: cả 2 nguồn đều xác nhận → đáng tin hơn).
-- Giữ **dòng của Bandit** (static analysis biết chính xác dòng nào).
+- `source` → `"both"` cho **mọi** lần gộp, kể cả LLM–LLM và Bandit–Bandit. Ngoài ra `apply_bandit_verdicts()` cũng đặt `both` khi LLM giữ một cảnh báo Bandit. Vì vậy `both` **không** đảm bảo có đủ hai nguồn; với LLM–LLM, `both` không có nghĩa Bandit cũng xác nhận.
+- Giữ **dòng của issue đích** (issue đứng trước). Pipeline xếp Bandit trước LLM nên gộp Bandit–LLM thường giữ dòng Bandit.
 - Giữ `explanation`/`message` **dài hơn** (LLM thường chi tiết hơn).
 - `severity` lấy **cao hơn**; `confidence` lấy **cao hơn** (LLM đã kiểm chứng có context → đáng tin hơn cảnh báo thô).

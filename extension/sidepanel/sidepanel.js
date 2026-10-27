@@ -1,496 +1,505 @@
-import { reviewCode, getHealth, normalizeCode, abortCurrentRequest, getSampleCode } from "../src/api.js";
-import { renderIssues, filterIssues, sortIssues } from "../src/render.js";
+import { reviewCode, getHealth, cancelReview } from "../src/api.js";
+import { renderIssues, filterIssues, sortIssues, showSkeleton, makeIcon } from "../src/render.js";
 import { getSettings, saveSettings } from "../src/storage.js";
 import { LOCAL_URL, DEPLOY_URL } from "../src/config.js";
 
 const $ = (id) => document.getElementById(id);
-
-// Status bar elements
-const backendStatusEl = $("backend-status");
-const backendStatusText = $("backend-status-text");
-const openWebLink = $("open-web");
-
-// Input section elements
+const srStatus = $("sr-status");
+const healthPill = $("health-pill");
+const healthPillText = $("health-pill-text");
+const listEl = $("issues");
+const bannerEl = $("banner");
+const resultControls = $("result-controls");
+const offlineGuide = $("offline-guide");
+const serverCommand = $("server-command");
+const copyCommandBtn = $("copy-command");
 const codeInput = $("code-input");
-const codeStats = $("code-stats");
-const codeHint = $("code-hint");
-const analyzingOverlay = $("analyzing-overlay");
-const emptyState = $("empty-state");
-const btnExample = $("btn-example");
-
-// Mode elements
-const segmentButtons = document.querySelectorAll(".segment[data-mode]");
-const modeDesc = $("mode-desc");
-const modeHint = $("mode-hint");
-
-// Action buttons
+const codeCounter = $("code-counter");
+const codeLimit = $("code-limit");
+const filterType = $("filter-type");
+const filterSeverity = $("filter-severity");
+const filterConfidence = $("filter-confidence");
+const modeSelect = $("mode-select");
 const btnAnalyze = $("btn-analyze");
 const btnCancel = $("btn-cancel");
 const btnClear = $("btn-clear");
-const btnEditCode = $("btn-edit-code");
+const openWeb = $("open-web");
+const themeSelect = $("theme-select");
+const resultCount = $("result-count");
 
-// Result elements
-const resultHeader = $("result-header");
-const resultSummaryLine1 = $("result-summary-line1");
-const resultSummaryLine2 = $("result-summary-line2");
+const HEALTH_CLASSES = ["is-checking", "is-ok", "is-ok-no-llm", "is-offline"];
 
-// Filter elements
-const typeChips = document.querySelectorAll(".chip[data-type] input");
-const filterSeverity = $("filter-severity");
-const filterConfidence = $("filter-confidence");
-const filterSection = $("filter-section");
-const resultsCount = $("results-count");
-const resultsShown = $("results-shown");
-const resultsTotal = $("results-total");
-
-// Issues & Banner
-const issuesList = $("issues");
-const bannerArea = $("banner-area");
-
-// State
-let allIssues = [];
-let filteredIssues = [];
-let llmEnabled = true;
-let maxCodeLength = 20000;
-let lastAnalyzeCode = "";
-let lastAnalyzeMode = "hybrid";
-let isAnalyzing = false;
-let backendOnline = false;
-let currentTypeFilter = "all";
-let currentSeverity = "all";
-let currentConfidence = "all";
-
-const PYTHON_KEYWORDS = ["def ", "import ", "class ", "return ", "print(", "if ", "for ", "while "];
-const EXAMPLE_CODE = `import os
-import sqlite3
-import subprocess
-
-PASSWORD = "admin123"
-
-
-def get_user(conn, user_id):
-    query = "SELECT * FROM users WHERE id = " + user_id
-    return conn.execute(query).fetchone()
-
-
-def run_cmd(cmd):
-    return subprocess.call(cmd, shell=True)
-
-
-def total(values):
-    return sum(values) / len(values)
-`;
-
-// Mode descriptions
-const MODE_DESCRIPTIONS = {
-  bandit: "Bandit: Chỉ SAST — nhanh, không cần API key, cơ sở bảo mật cơ bản",
-  llm: "LLM: Chỉ AI — tìm bug & quality, cần API key",
-  hybrid: "Hybrid (Khuyên dùng): Bandit + LLM — ít báo nhầm hơn, bắt thêm lỗi bug/quality"
+const state = {
+  health: "checking",
+  review: "idle",
+  issues: [],
+  meta: null,
+  error: null,
+  sourceNotice: "",
+  lastCode: "",
+  maxCodeLength: 20000,
+  healthRequestId: 0,
+  reviewRequestId: 0
 };
 
-// Severity/Confidence labels
-const SEV_LABELS = { high: "High", medium: "Medium", low: "Low" };
-const CONF_LABELS = { high: "High", medium: "Medium", low: "Low" };
-
-// --- Helpers ---
-function updateCodeStats() {
-  const code = codeInput.value;
-  const lines = code ? code.split("\n").length : 0;
-  const chars = code.length;
-  codeStats.textContent = `${lines} dòng · ${chars.toLocaleString()} / ${maxCodeLength.toLocaleString()} ký tự`;
-  codeStats.classList.toggle("warning", chars > maxCodeLength);
+function announce(message) {
+  srStatus.textContent = message;
 }
 
-function setBackendStatus(healthy, enabled) {
-  backendOnline = healthy;
-  llmEnabled = enabled;
-  if (healthy) {
-    backendStatusText.textContent = `Sẵn sàng · LLM: ${enabled ? "bật" : "tắt"}`;
-    backendStatusEl.classList.remove("offline");
-    backendStatusEl.classList.add("online");
-  } else {
-    backendStatusText.textContent = "Chưa kết nối";
-    backendStatusEl.classList.add("offline");
-    backendStatusEl.classList.remove("online");
+function clearBanner() {
+  bannerEl.replaceChildren();
+}
+
+function bannerIcon(kind) {
+  const svg = makeIcon(kind);
+  svg.classList.remove("empty-icon");
+  svg.classList.add("banner-icon");
+  return svg;
+}
+
+function showBanner(kind, title, text, actions = [], compact = false) {
+  const banner = document.createElement("div");
+  banner.className = `banner banner-${kind}${compact ? " banner-compact" : ""}`;
+  banner.append(bannerIcon(kind === "err" ? "error" : kind === "warn" ? "warn" : "empty"));
+
+  const copy = document.createElement("div");
+  copy.className = "banner-copy";
+
+  const heading = document.createElement("div");
+  heading.className = "banner-title";
+  heading.textContent = title;
+  copy.append(heading);
+
+  if (text) {
+    const body = document.createElement("div");
+    body.className = "banner-text";
+    body.textContent = text;
+    copy.append(body);
   }
-  updateModeHint();
-  updateSegmentStates();
-}
 
-function updateModeHint() {
-  const mode = getCurrentMode();
-  if (backendOnline && llmEnabled === false && (mode === "llm" || mode === "hybrid")) {
-    modeHint.textContent = "LLM chưa cấu hình trên máy chủ, kết quả có thể chỉ có Bandit";
-    modeHint.hidden = false;
-  } else {
-    modeHint.hidden = true;
-  }
-}
-
-function updateSegmentStates() {
-  const mode = getCurrentMode();
-  segmentButtons.forEach(btn => {
-    const isActive = btn.dataset.mode === mode;
-    btn.classList.toggle("active", isActive);
-    btn.setAttribute("aria-checked", isActive);
-  });
-  modeDesc.textContent = MODE_DESCRIPTIONS[mode] || "";
-}
-
-function getCurrentMode() {
-  const active = document.querySelector(".segment.active");
-  return active ? active.dataset.mode : "hybrid";
-}
-
-function setAnalyzing(analyzing) {
-  isAnalyzing = analyzing;
-  btnAnalyze.disabled = analyzing;
-  btnCancel.hidden = !analyzing;
-  btnClear.disabled = analyzing;
-  btnEditCode.disabled = analyzing;
-  codeInput.disabled = analyzing;
-  
-  const btnText = btnAnalyze.querySelector(".btn-text");
-  if (analyzing) {
-    btnText.innerHTML = '<span class="spinner"></span> Đang phân tích...';
-    analyzingOverlay.hidden = false;
-    emptyState.hidden = true;
-    resultHeader.hidden = true;
-    filterSection.hidden = true;
-    resultsCount.hidden = true;
-    typeChips.forEach(c => c.closest(".chip").style.display = "none");
-    bannerArea.hidden = true;
-  } else {
-    btnText.textContent = "Phân tích";
-    analyzingOverlay.hidden = true;
-  }
-}
-
-function showBanner(type, title, text, showRetry = false) {
-  const retryBtnHtml = showRetry ? `<button id="btn-retry" type="button" class="btn btn-primary" style="padding:6px 12px;font-size:12px;height:auto;">Thử lại</button>` : "";
-  bannerArea.innerHTML = `
-    <div class="banner ${type}" role="alert">
-      <svg class="icon icon-md" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        ${type === "error" ? '<circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line>' : type === "warning" ? '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>' : '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline>'}
-      </svg>
-      <div class="banner-content">
-        <div class="banner-title">${title}</div>
-        <div class="banner-text">${text}</div>
-        <div class="banner-actions">${retryBtnHtml}</div>
-      </div>
-    </div>
-  `;
-  bannerArea.hidden = false;
-  
-  const retryBtn = $("btn-retry");
-  if (retryBtn) {
-    retryBtn.addEventListener("click", () => analyze(lastAnalyzeCode));
-  }
-}
-
-function hideBanner() {
-  bannerArea.hidden = true;
-  bannerArea.innerHTML = "";
-}
-
-function showEmptyState() {
-  emptyState.hidden = false;
-  resultHeader.hidden = true;
-  filterSection.hidden = true;
-  resultsCount.hidden = true;
-  issuesList.innerHTML = "";
-  typeChips.forEach(c => c.closest(".chip").style.display = "none");
-  hideBanner();
-}
-
-function showResultHeader(issues, modeLabel) {
-  const counts = { security: 0, bug: 0, quality: 0 };
-  for (const issue of issues) {
-    if (counts[issue.type] !== undefined) counts[issue.type]++;
-  }
-  
-  resultSummaryLine1.textContent = `Đã phân tích ${issues.length} dòng · ${modeLabel}`;
-  const parts = [];
-  if (counts.security) parts.push(`${counts.security} Security`);
-  if (counts.bug) parts.push(`${counts.bug} Bug`);
-  if (counts.quality) parts.push(`${counts.quality} Quality`);
-  resultSummaryLine2.textContent = parts.length ? parts.join(" · ") : "Không phát hiện lỗi";
-  
-  // Update chip counts
-  document.getElementById("chip-count-all").textContent = issues.length;
-  document.getElementById("chip-count-security").textContent = counts.security;
-  document.getElementById("chip-count-bug").textContent = counts.bug;
-  document.getElementById("chip-count-quality").textContent = counts.quality;
-  
-  resultHeader.hidden = false;
-  filterSection.hidden = false;
-  resultsCount.hidden = false;
-  typeChips.forEach(c => c.closest(".chip").style.display = "");
-  updateResultsCount();
-}
-
-function updateResultsCount() {
-  resultsShown.textContent = filteredIssues.length;
-  resultsTotal.textContent = allIssues.length;
-  resultsCount.hidden = false;
-}
-
-function updateTypeChips() {
-  const counts = { security: 0, bug: 0, quality: 0 };
-  for (const issue of allIssues) {
-    if (counts[issue.type] !== undefined) counts[issue.type]++;
-  }
-  document.getElementById("chip-count-all").textContent = allIssues.length;
-  document.getElementById("chip-count-security").textContent = counts.security;
-  document.getElementById("chip-count-bug").textContent = counts.bug;
-  document.getElementById("chip-count-quality").textContent = counts.quality;
-}
-
-function setTypeFilter(type) {
-  currentTypeFilter = type;
-  typeChips.forEach(input => {
-    input.checked = input.dataset.type === type || type === "all";
-  });
-  applyFilters();
-}
-
-function applyFilters() {
-  filteredIssues = allIssues.filter(issue => {
-    const typeMatch = currentTypeFilter === "all" || issue.type === currentTypeFilter;
-    const sevMatch = currentSeverity === "all" || issue.severity === currentSeverity;
-    const confMatch = currentConfidence === "all" || issue.confidence === currentConfidence;
-    return typeMatch && sevMatch && confMatch;
-  });
-  updateResultsCount();
-  renderIssues(issuesList, sortIssues(filteredIssues));
-}
-
-// --- Event Handlers ---
-function handleModeChange(mode) {
-  const btn = document.querySelector(`.segment[data-mode="${mode}"]`);
-  if (btn) {
-    segmentButtons.forEach(b => {
-      b.classList.remove("active");
-      b.setAttribute("aria-checked", "false");
+  if (actions.length) {
+    const row = document.createElement("div");
+    row.className = "banner-actions";
+    actions.forEach(({ label, onClick, primary }) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `btn ${primary ? "btn-primary" : "btn-secondary"}`;
+      btn.textContent = label;
+      btn.addEventListener("click", onClick);
+      row.append(btn);
     });
-    btn.classList.add("active");
-    btn.setAttribute("aria-checked", "true");
-    modeDesc.textContent = MODE_DESCRIPTIONS[mode] || "";
-    updateModeHint();
+    copy.append(row);
   }
+
+  banner.append(copy);
+  bannerEl.append(banner);
+}
+
+function renderHealth() {
+  healthPill.classList.remove(...HEALTH_CLASSES);
+  healthPill.classList.add(`is-${state.health.replace(/_/g, "-")}`);
+
+  const labels = {
+    checking: "Đang kiểm tra…",
+    ok: "Sẵn sàng",
+    ok_no_llm: "Sẵn sàng · LLM tắt",
+    offline: "Máy chủ chưa chạy"
+  };
+  healthPillText.textContent = labels[state.health];
+}
+
+function renderBanners() {
+  clearBanner();
+
+  if (state.sourceNotice) {
+    showBanner(
+      "warn",
+      "Nguồn code từ GitHub chưa đầy đủ",
+      state.sourceNotice,
+      [
+        {
+          label: "Đã hiểu",
+          onClick: () => {
+            state.sourceNotice = "";
+            renderBanners();
+          }
+        }
+      ]
+    );
+  }
+
+  if (state.review === "error" && state.error) {
+    showBanner("err", state.error.title, state.error.text, [
+      {
+        label: "Thử lại",
+        onClick: () => analyze(state.lastCode || codeInput.value),
+        primary: true
+      }
+    ]);
+    return;
+  }
+
+  const hasLlmError = state.meta?.llm_error && state.health !== "ok_no_llm";
+
+  if (hasLlmError) {
+    showBanner(
+      "warn",
+      "LLM không trả về kết quả hợp lệ",
+      `Đang hiển thị kết quả Bandit. Chi tiết: ${state.meta.llm_error}`,
+      [{ label: "Thử lại", onClick: () => analyze(state.lastCode), primary: true }]
+    );
+  } else if (state.review === "done" && state.issues.length === 0) {
+    showBanner("ok", "Không phát hiện vấn đề", "Không có lỗi nào được tìm thấy trong đoạn code này.");
+  }
+
+  if (state.health === "ok_no_llm" && modeSelect.value !== "bandit") {
+    showBanner(
+      "info",
+      "LLM chưa được cấu hình trên máy chủ; kết quả có thể chỉ gồm Bandit.",
+      "",
+      [],
+      true
+    );
+  }
+}
+
+function updateCodeCount() {
+  const length = codeInput.value.length;
+  codeCounter.textContent = `${length.toLocaleString("vi-VN")} ký tự`;
+  codeLimit.textContent = `${state.maxCodeLength.toLocaleString("vi-VN")} ký tự`;
+  codeLimit.classList.toggle("over", length > state.maxCodeLength);
+}
+
+function filteredIssues() {
+  const bySeverity = filterIssues(state.issues, {
+    severity: filterSeverity.value,
+    confidence: filterConfidence.value
+  });
+  const type = filterType.value;
+  return bySeverity.filter((issue) => type === "all" || issue.type === type);
+}
+
+function refreshList() {
+  const filtered = sortIssues(filteredIssues());
+  resultCount.textContent = `${filtered.length} lỗi`;
+  renderIssues(listEl, filtered);
+}
+
+function renderResults() {
+  const hasIssues = state.review === "done" && state.issues.length > 0;
+  resultControls.hidden = !hasIssues;
+
+  if (state.review === "loading") {
+    offlineGuide.hidden = true;
+    listEl.hidden = false;
+    resultCount.textContent = "Đang tải…";
+    showSkeleton(listEl, 3);
+    return;
+  }
+
+  if (hasIssues) {
+    offlineGuide.hidden = true;
+    listEl.hidden = false;
+    refreshList();
+    return;
+  }
+
+  listEl.replaceChildren();
+  listEl.hidden = true;
+  offlineGuide.hidden = !(state.review === "idle" && state.health === "offline");
+}
+
+function render() {
+  renderHealth();
+  renderBanners();
+  renderResults();
+}
+
+function resetReview() {
+  state.reviewRequestId += 1;
+  cancelReview();
+  state.review = "idle";
+  state.issues = [];
+  state.meta = null;
+  state.error = null;
+  listEl.replaceChildren();
+  resultCount.textContent = "0 lỗi";
+}
+
+function setCodeTabSize(value) {
+  const size = Number.parseInt(value, 10);
+  codeInput.style.tabSize =
+    Number.isInteger(size) && size >= 1 && size <= 16 ? String(size) : "";
+}
+
+function acceptPendingCode(code, { notice = "", tabSize = "" } = {}) {
+  if (typeof code !== "string") return;
+
+  const sourceNotice = typeof notice === "string" ? notice : "";
+  if (!code && !sourceNotice) return;
+
+  resetReview();
+  codeInput.value = code;
+  state.sourceNotice = sourceNotice;
+  setCodeTabSize(tabSize);
+  updateCodeCount();
+  render();
 }
 
 async function analyze(code) {
-  const normalized = normalizeCode(code);
-  if (!normalized) {
-    showBanner("error", "Không có code", "Vui lòng dán code hoặc bôi đen code trên trang web.");
+  state.lastCode = code;
+
+  if (!code.trim()) {
+    state.review = "error";
+    state.issues = [];
+    state.meta = null;
+    state.error = {
+      title: "Chưa có mã nguồn",
+      text: "Hãy dán code Python trước khi phân tích."
+    };
+    announce("Chưa có mã nguồn để phân tích.");
+    render();
     return;
   }
 
-  const isPython = PYTHON_KEYWORDS.some(kw => normalized.toLowerCase().includes(kw));
-  if (!isPython) {
-    codeHint.textContent = "Đoạn này có vẻ không phải code Python";
-    codeHint.hidden = false;
-  } else {
-    codeHint.hidden = true;
-  }
-
-  if (normalized.length > maxCodeLength) {
-    showBanner("error", "Code quá dài", `Độ dài ${normalized.length.toLocaleString()} ký tự vượt giới hạn ${maxCodeLength.toLocaleString()}.`);
+  if (code.length > state.maxCodeLength) {
+    state.review = "error";
+    state.issues = [];
+    state.meta = null;
+    state.error = {
+      title: "Mã nguồn quá dài",
+      text: `Giới hạn hiện tại là ${state.maxCodeLength.toLocaleString("vi-VN")} ký tự. Hãy rút gọn rồi thử lại.`
+    };
+    announce("Mã nguồn quá dài.");
+    render();
     return;
   }
 
-  const settings = await getSettings();
-  lastAnalyzeCode = normalized;
-  lastAnalyzeMode = settings.mode;
-
-  setAnalyzing(true);
-  hideBanner();
+  const requestId = ++state.reviewRequestId;
+  state.review = "loading";
+  state.issues = [];
+  state.meta = null;
+  state.error = null;
+  announce("Đang phân tích mã nguồn.");
+  render();
 
   try {
+    const result = await reviewCode(code, { mode: modeSelect.value });
+    if (requestId !== state.reviewRequestId) return;
 
-    const result = await reviewCode(normalized, { mode: settings.mode });
-    allIssues = result.issues;
-    const modeLabel = result.meta?.mode || settings.mode;
-
-    setBackendStatus(true, llmEnabled);
-
-    if (result.meta?.llm_error) {
-      showBanner("warning", "LLM gặp lỗi", "Đang hiển thị kết quả chỉ từ Bandit.");
-    } else if (allIssues.length === 0) {
-      showBanner("success", "Không phát hiện lỗi", `Chế độ ${modeLabel} không tìm thấy vấn đề nào.`);
-    }
-
-    showResultHeader(allIssues, modeLabel);
-    applyFilters();
+    state.issues = Array.isArray(result.issues) ? result.issues : [];
+    state.meta = result.meta || null;
+    state.review = "done";
+    announce(`Hoàn tất, tìm thấy ${state.issues.length} lỗi.`);
   } catch (err) {
+    if (requestId !== state.reviewRequestId) return;
+
     if (err.message === "cancelled") {
-      setAnalyzing(false);
-      showEmptyState();
-      return;
+      state.review = "idle";
+      state.issues = [];
+      state.meta = null;
+      state.error = null;
+      announce("Đã huỷ phân tích.");
+    } else {
+      state.review = "error";
+      state.issues = [];
+      state.meta = null;
+      state.error = {
+        title: "Không thể phân tích",
+        text: `${err.message}. Kiểm tra máy chủ đang chạy và thử lại.`
+      };
+      announce("Không thể phân tích mã nguồn.");
     }
-    allIssues = [];
-    handleError(err);
   } finally {
-    setAnalyzing(false);
+    if (requestId === state.reviewRequestId) render();
   }
 }
 
-function handleError(err) {
-  const isNetworkError = err.message === "Không kết nối được máy chủ";
-  const isTimeout = err.message?.includes("timeout") || err.name === "AbortError";
+async function checkHealth() {
+  const requestId = ++state.healthRequestId;
+  state.health = "checking";
+  render();
 
-  if (isNetworkError || isTimeout) {
-    showBanner("error", "Không kết nối được máy chủ", "Hãy chạy backend (python -m uvicorn app.main:app --app-dir backend --port 8000) hoặc đặt USE_MOCK = true trong src/config.js.", true);
-    setBackendStatus(false, llmEnabled);
+  let health = null;
+  try {
+    health = await getHealth();
+  } catch {
+    health = null;
+  }
+
+  if (requestId !== state.healthRequestId) return;
+
+  if (!health) {
+    state.health = "offline";
+    announce("Máy chủ chưa chạy.");
   } else {
-    const retryable = err.message?.includes("5xx") || err.message?.includes("Máy chủ gặp lỗi");
-    showBanner("error", err.message, retryable ? "Có thể thử lại sau vài giây." : "", retryable);
+    state.health = health.llm_enabled ? "ok" : "ok_no_llm";
+    state.maxCodeLength = health.max_code_length || 20000;
+    updateCodeCount();
+    announce(state.health === "ok" ? "Máy chủ sẵn sàng." : "Máy chủ sẵn sàng, LLM đang tắt.");
   }
+
+  render();
 }
 
-function handleCancel() {
-  abortCurrentRequest();
+function cancelActiveReview() {
+  if (state.review !== "loading") return;
+
+  resetReview();
+  announce("Đã huỷ phân tích.");
+  render();
 }
 
 function clearAll() {
+  resetReview();
   codeInput.value = "";
-  updateCodeStats();
-  codeHint.hidden = true;
-  lastAnalyzeCode = "";
-  allIssues = [];
-  filteredIssues = [];
+  state.lastCode = "";
+  state.sourceNotice = "";
+  setCodeTabSize("");
+  filterType.value = "all";
   filterSeverity.value = "all";
   filterConfidence.value = "all";
-  setTypeFilter("all");
-  showEmptyState();
+  updateCodeCount();
+  announce("Đã xoá mã nguồn và kết quả.");
+  render();
 }
 
-async function loadExampleCode() {
-  const sampleCode = await getSampleCode();
-  const code = sampleCode || EXAMPLE_CODE;
-  codeInput.value = code;
-  updateCodeStats();
-  analyze(code);
-}
-
-function handleTypeChipChange(e) {
-  const type = e.target.dataset.type;
-  setTypeFilter(type);
-}
-
-function handleSeverityChange() {
-  currentSeverity = filterSeverity.value;
-  applyFilters();
-}
-
-function handleConfidenceChange() {
-  currentConfidence = filterConfidence.value;
-  applyFilters();
-}
-
-let healthCheckInFlight = false;
-
-async function checkHealth() {
-  // Prevent focus/click events from starting overlapping health checks.
-  if (healthCheckInFlight) return;
-  healthCheckInFlight = true;
-
-  let timeoutId;
-  try {
-    // A stalled backend must not leave the status pill in "checking" forever.
-    const health = await Promise.race([
-      getHealth(),
-      new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error("health-timeout")), 5000);
-      })
-    ]);
-
-    if (health) {
-      maxCodeLength = health.max_code_length || 20000;
-    }
-    setBackendStatus(!!health, health?.llm_enabled);
-  } catch (err) {
-    setBackendStatus(false, false);
-  } finally {
-    clearTimeout(timeoutId);
-    healthCheckInFlight = false;
-    updateCodeStats();
+function applyTheme(theme) {
+  if (theme === "auto") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.setAttribute("data-theme", theme);
   }
 }
 
-async function initMode() {
-  const settings = await getSettings();
-  handleModeChange(settings.mode);
-  
-  segmentButtons.forEach(btn => {
-    btn.addEventListener("click", () => handleModeChange(btn.dataset.mode));
-    btn.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        handleModeChange(btn.dataset.mode);
-      }
-    });
-  });
+function fallbackCopy(text) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.select();
+
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+
+  textarea.remove();
+  return copied;
+}
+
+async function copyCommand() {
+  const command = serverCommand.textContent || "";
+  let copied = false;
+
+  try {
+    await navigator.clipboard.writeText(command);
+    copied = true;
+  } catch {
+    copied = fallbackCopy(command);
+  }
+
+  copyCommandBtn.textContent = copied ? "Đã sao chép" : "Sao chép thất bại";
+  announce(copied ? "Đã sao chép lệnh khởi động máy chủ." : "Không sao chép được lệnh.");
+
+  window.setTimeout(() => {
+    copyCommandBtn.textContent = "Sao chép";
+  }, 1500);
 }
 
 function initOpenWebLink() {
-  const url = DEPLOY_URL || LOCAL_URL;
-  openWebLink.href = url;
+  openWeb.href = DEPLOY_URL || LOCAL_URL;
+}
+
+async function initMode() {
+  modeSelect.addEventListener("change", () => {
+    render();
+    saveSettings({ mode: modeSelect.value });
+  });
+
+  const settings = await getSettings();
+  modeSelect.value = settings.mode;
+  render();
 }
 
 function initInputHandlers() {
   btnAnalyze.addEventListener("click", () => analyze(codeInput.value));
-  btnCancel.addEventListener("click", handleCancel);
   btnClear.addEventListener("click", clearAll);
-  btnEditCode.addEventListener("click", () => {
-    resultHeader.hidden = true;
-    filterSection.hidden = true;
-    resultsCount.hidden = true;
-    typeChips.forEach(c => c.closest(".chip").style.display = "none");
-    issuesList.innerHTML = "";
-    codeInput.focus();
-  });
+  healthPill.addEventListener("click", checkHealth);
+  copyCommandBtn.addEventListener("click", copyCommand);
 
-  codeInput.addEventListener("input", updateCodeStats);
-  codeInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
+  codeInput.addEventListener("input", () => {
+    if (state.sourceNotice) {
+      state.sourceNotice = "";
+      render();
+    }
+    updateCodeCount();
+  });
+  codeInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
       analyze(codeInput.value);
     }
   });
 
-  // Type chips
-  typeChips.forEach(input => {
-    input.addEventListener("change", handleTypeChipChange);
+  themeSelect.addEventListener("change", (event) => {
+    const theme = event.target.value;
+    applyTheme(theme);
+    localStorage.setItem("theme", theme);
   });
 
-  filterSeverity.addEventListener("change", handleSeverityChange);
-  filterConfidence.addEventListener("change", handleConfidenceChange);
-
-  // Backend status click to re-check
-  backendStatusEl.addEventListener("click", () => {
-    if (!isAnalyzing) checkHealth();
-  });
-
-  // Window focus to re-check health
-  window.addEventListener("focus", () => {
-    if (!isAnalyzing) checkHealth();
-  });
+  filterType.addEventListener("change", refreshList);
+  filterSeverity.addEventListener("change", refreshList);
+  filterConfidence.addEventListener("change", refreshList);
 }
 
-// --- Init ---
-chrome.storage.session.get("pendingCode").then(({ pendingCode }) => {
-  checkHealth();
-  initMode();
+function initTheme() {
+  const savedTheme = localStorage.getItem("theme") || "auto";
+  themeSelect.value = savedTheme;
+  applyTheme(savedTheme);
+}
+
+async function init() {
+  initTheme();
   initOpenWebLink();
   initInputHandlers();
-  
-  if (pendingCode) {
-    codeInput.value = pendingCode;
-    updateCodeStats();
-    analyze(pendingCode);
-  } else {
-    showEmptyState();
+  render();
+
+  await initMode();
+
+  const { pendingCode, pendingCodeNotice, pendingTabSize } =
+    await chrome.storage.session.get([
+      "pendingCode",
+      "pendingCodeNotice",
+      "pendingTabSize"
+    ]);
+  if (typeof pendingCode === "string") {
+    acceptPendingCode(pendingCode, {
+      notice: pendingCodeNotice,
+      tabSize: pendingTabSize
+    });
   }
+
+  await checkHealth();
+}
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") cancelActiveReview();
 });
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "session" || typeof changes.pendingCode?.newValue !== "string") {
+    return;
+  }
+
+  acceptPendingCode(changes.pendingCode.newValue, {
+    notice: changes.pendingCodeNotice?.newValue,
+    tabSize: changes.pendingTabSize?.newValue
+  });
+});
+
+init();

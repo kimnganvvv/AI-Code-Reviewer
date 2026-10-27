@@ -1,0 +1,3 @@
+# Các file trong samples/ là dữ liệu benchmark cố tình chứa lỗ hổng/anti-pattern.
+# Không lint chúng, chỉ lint code công cụ trong benchmark/.
+exclude = ["samples"]

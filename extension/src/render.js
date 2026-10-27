@@ -4,26 +4,11 @@ const SOURCES = ["bandit", "llm", "both"];
 
 const TYPE_LABEL = { security: "Security", bug: "Bug", quality: "Quality" };
 const SOURCE_LABEL = { bandit: "Bandit", llm: "LLM", both: "Bandit + LLM" };
+const SEVERITY_LABEL = { high: "Cao", medium: "Trung bình", low: "Thấp" };
+const CONFIDENCE_LABEL = { high: "Tin cậy cao", medium: "Tin cậy vừa", low: "Tin cậy thấp" };
 const LEVEL_ORDER = { high: 3, medium: 2, low: 1 };
 
-// SVG Icons for issue types
-const TYPE_ICONS = {
-  security: `<svg class="icon icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`,
-  bug: `<svg class="icon icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.14 9.5a3.5 3.5 0 0 0 0 5"><path d="M12 16h.01"></path><path d="M9 13a3.5 3.5 0 0 1 0 5"></path><path d="M12 16h.01"></path><path d="M12 3a6 6 0 0 0-1.4 1.2"></path><path d="M12 3a6 6 0 0 1 1.4 1.2"></path><path d="M18.5 15.5a5 5 0 0 1-2.5 4.5"></path><path d="M17.14 19.5a3.5 3.5 0 0 1 0-5"></path><path d="M5.5 15.5a5 5 0 0 0 2.5 4.5"></path><path d="M6.86 19.5a3.5 3.5 0 0 0 0-5"></path></svg>`,
-  quality: `<svg class="icon icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>`
-};
-
-// Chevron icon
-const CHEVRON_ICON = `<svg class="icon icon-sm chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
-
-// Copy icon
-const COPY_ICON = `<svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
-// Check icon for copied state
-const CHECK_ICON = `<svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-
-function safe(value, allowed) {
-  return allowed.includes(value) ? value : "unknown";
-}
+const SVG_NS = "http://www.w3.org/2000/svg";
 
 export function sortIssues(issues) {
   return [...issues].sort(
@@ -48,164 +33,181 @@ function el(tag, className, text) {
   return node;
 }
 
-function createConfidenceDots(confidence) {
-  const dots = document.createElement("span");
-  dots.className = `confidence-dots ${confidence}`;
-  dots.setAttribute("aria-label", `Độ tin cậy: ${confidence === "high" ? "cao" : confidence === "medium" ? "trung bình" : "thấp"}`);
-  dots.innerHTML = `
-    <span class="dot"></span>
-    <span class="dot"></span>
-    <span class="dot"></span>
-  `;
-  return dots;
+function svgPath(d) {
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", d);
+  return path;
 }
 
-function createSeverityBadge(severity) {
-  const badge = el("span", `sev-badge ${severity}`, severity.toUpperCase());
-  return badge;
+export function makeIcon(kind) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.6");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.classList.add("empty-icon");
+
+  const paths = {
+    empty: [
+      "M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z",
+      "m9 12 2 2 4-4"
+    ],
+    none: [
+      "M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z",
+      "M9 12h6"
+    ],
+    error: [
+      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z",
+      "M12 9v4",
+      "M12 17h.01"
+    ],
+    warn: [
+      "M12 9v4",
+      "M12 17h.01",
+      "M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"
+    ]
+  };
+
+  (paths[kind] || paths.empty).forEach((d) => svg.append(svgPath(d)));
+  return svg;
 }
 
-function createCweChip(cweId) {
-  const chip = el("span", "cwe-chip", cweId);
-  return chip;
+function badge(text, kind) {
+  const node = el("span", `badge ${kind}`, text);
+  node.prepend(el("span", "badge-dot"));
+  return node;
+}
+
+function confidence(level) {
+  const node = el("span", `conf ${level}`, null);
+  node.title = CONFIDENCE_LABEL[level];
+  for (let i = 0; i < 3; i += 1) node.append(el("span", "conf-dot"));
+  node.append(el("span", "conf-label", CONFIDENCE_LABEL[level]));
+  return node;
+}
+
+export function renderEmptyState(
+  container,
+  {
+    title = "Không có kết quả",
+    text = "",
+    actionLabel = "",
+    onAction = null,
+    icon = "none"
+  } = {}
+) {
+  container.replaceChildren();
+  const wrap = el("div", "empty-state");
+  wrap.append(makeIcon(icon));
+  wrap.append(el("div", "empty-title", title));
+  if (text) wrap.append(el("div", "empty-sub", text));
+
+  if (actionLabel && onAction) {
+    const button = el("button", "btn btn-primary", actionLabel);
+    button.type = "button";
+    button.addEventListener("click", onAction);
+    wrap.append(button);
+  }
+
+  container.append(wrap);
+}
+
+function createCard(issue, index) {
+  const type = TYPES.includes(issue.type) ? issue.type : "quality";
+  const severity = LEVELS.includes(issue.severity) ? issue.severity : "low";
+  const confidenceLevel = LEVELS.includes(issue.confidence) ? issue.confidence : "low";
+  const source = SOURCES.includes(issue.source) ? issue.source : "bandit";
+
+  const card = el("article", `issue-card type-${type}`, null);
+  card.style.animationDelay = `${Math.min(index * 30, 240)}ms`;
+
+  const toggle = el("button", "issue-card-toggle", null);
+  toggle.type = "button";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.append(el("span", "issue-card-title", issue.message || "(không có tiêu đề)"));
+  const icon = el("span", "expand-icon", "▼");
+  icon.setAttribute("aria-hidden", "true");
+  toggle.append(icon);
+
+  const header = el("div", "issue-card-header", null);
+  header.append(
+    el("span", `issue-card-type type-${type}`, TYPE_LABEL[type]),
+    badge(SEVERITY_LABEL[severity], `severity-${severity}`),
+    confidence(confidenceLevel)
+  );
+
+  const meta = el("div", "issue-card-meta", `Dòng ${issue.line ?? "?"} · ${SOURCE_LABEL[source]}`);
+
+  const details = el("div", "issue-card-details", null);
+  if (issue.cwe_id) details.append(el("span", "cwe", issue.cwe_id));
+  details.append(el("p", "explanation", issue.explanation || "Không có giải thích."));
+
+  if (issue.suggestion) {
+    const sugHead = el("div", "sug-head", null);
+    sugHead.append(el("span", "sug-label", "Đề xuất sửa"));
+    const copyBtn = el("button", "copy-btn", "Sao chép");
+    copyBtn.type = "button";
+    copyBtn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(issue.suggestion);
+        copyBtn.textContent = "Đã chép";
+      } catch {
+        copyBtn.textContent = "Không chép được";
+      }
+      setTimeout(() => {
+        copyBtn.textContent = "Sao chép";
+      }, 1500);
+    });
+    sugHead.append(copyBtn);
+    details.append(sugHead, el("pre", "code-block suggestion", issue.suggestion));
+  }
+
+  const setOpen = (open) => {
+    details.classList.toggle("expanded", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    icon.style.transform = open ? "rotate(180deg)" : "rotate(0deg)";
+  };
+
+  toggle.addEventListener("click", () => setOpen(!details.classList.contains("expanded")));
+
+  card.addEventListener("click", (event) => {
+    if (event.target.closest("button, a")) return;
+    setOpen(!details.classList.contains("expanded"));
+  });
+
+  card.append(toggle, header, meta, details);
+  return card;
+}
+
+export function showSkeleton(container, count = 3) {
+  container.replaceChildren();
+  for (let i = 0; i < count; i += 1) {
+    const card = el("div", "issue-card", null);
+    card.append(el("div", "skeleton", ""), el("div", "skeleton", ""), el("div", "skeleton", ""));
+    const [a, b, c] = card.children;
+    a.style.height = "16px";
+    a.style.width = "70%";
+    a.style.marginBottom = "10px";
+    b.style.height = "12px";
+    b.style.width = "45%";
+    b.style.marginBottom = "10px";
+    c.style.height = "40px";
+    c.style.width = "100%";
+    container.append(card);
+  }
 }
 
 export function renderIssues(container, issues) {
   container.replaceChildren();
   if (issues.length === 0) {
-    const empty = el("div", "empty-results");
-    empty.innerHTML = `
-      <div class="icon" aria-hidden="true">
-        <svg class="icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-          <polyline points="22 4 12 14.01 9 11.01"></polyline>
-        </svg>
-      </div>
-      <h3>Không có lỗi phù hợp</h3>
-      <p>Thử thay đổi bộ lọc hoặc chạy lại phân tích.</p>
-    `;
-    container.append(empty);
+    renderEmptyState(container, {
+      text: "Thử đổi bộ lọc hoặc phân tích một đoạn code khác."
+    });
     return;
   }
-  issues.forEach((issue) => container.append(createCard(issue)));
-}
-
-function createCard(issue) {
-  const type = safe(issue.type, TYPES);
-  const severity = safe(issue.severity, LEVELS);
-  const confidence = safe(issue.confidence, LEVELS);
-  const source = safe(issue.source, SOURCES);
-
-  const card = el("article", `issue-card type-${type}`);
-  card.dataset.line = issue.line || 0;
-
-  // Header (clickable to expand)
-  const header = el("button", "issue-header");
-  header.type = "button";
-  header.setAttribute("aria-expanded", "false");
-  header.setAttribute("aria-controls", `issue-body-${issue.line || Math.random()}`);
-
-  // Icon
-  const iconWrap = el("div", `issue-icon ${type}`);
-  iconWrap.innerHTML = TYPE_ICONS[type] || TYPE_ICONS.security;
-  iconWrap.setAttribute("aria-hidden", "true");
-
-  // Main content
-  const main = el("div", "issue-main");
-
-  // Title
-  const title = el("h3", "issue-title", issue.message || "(không có tiêu đề)");
-
-  // Badges row
-  const badges = el("div", "issue-badges");
-  
-  // Severity badge
-  badges.append(createSeverityBadge(severity));
-  
-  // Confidence dots
-  badges.append(createConfidenceDots(confidence));
-  
-  // CWE chip
-  if (issue.cwe_id) {
-    badges.append(createCweChip(issue.cwe_id));
-  }
-
-  // Meta line
-  const meta = el("div", "issue-meta", `Dòng ${issue.line ?? "?"} · Nguồn: ${SOURCE_LABEL[source] ?? "?"}`);
-
-  main.append(title, badges, meta);
-
-  // Chevron
-  const chevron = document.createElement("span");
-  chevron.className = "chevron";
-  chevron.innerHTML = CHEVRON_ICON;
-  chevron.setAttribute("aria-hidden", "true");
-
-  header.append(iconWrap, main, chevron);
-
-  // Body (collapsible)
-  const bodyId = `issue-body-${issue.line || Math.random()}`;
-  const body = el("div", "issue-body");
-  body.id = bodyId;
-  body.hidden = true;
-
-  // Explanation
-  if (issue.explanation) {
-    body.append(el("p", "explanation", issue.explanation));
-  } else {
-    body.append(el("p", "explanation", "Không có giải thích."));
-  }
-
-  // Suggestion
-  if (issue.suggestion) {
-    const suggestionSection = el("div", "suggestion-section");
-    
-    const sugHeader = el("div", "suggestion-header");
-    sugHeader.innerHTML = `<span>Đề xuất sửa</span>`;
-    
-    const copyBtn = el("button", "copy-btn");
-    copyBtn.type = "button";
-    copyBtn.innerHTML = `${COPY_ICON} <span>Sao chép</span>`;
-    copyBtn.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(issue.suggestion);
-        copyBtn.innerHTML = `${CHECK_ICON} <span>Đã chép</span>`;
-        copyBtn.classList.add("copied");
-        setTimeout(() => {
-          copyBtn.innerHTML = `${COPY_ICON} <span>Sao chép</span>`;
-          copyBtn.classList.remove("copied");
-        }, 1500);
-      } catch {
-        copyBtn.textContent = "Không chép được";
-        setTimeout(() => {
-          copyBtn.innerHTML = `${COPY_ICON} <span>Sao chép</span>`;
-        }, 1500);
-      }
-    });
-    sugHeader.append(copyBtn);
-    
-    const suggestionCode = el("pre", "suggestion-code", issue.suggestion);
-    
-    suggestionSection.append(sugHeader, suggestionCode);
-    body.append(suggestionSection);
-  }
-
-  // Toggle handler
-  header.addEventListener("click", () => {
-    const isOpen = body.hidden;
-    body.hidden = !isOpen;
-    header.setAttribute("aria-expanded", isOpen);
-    card.classList.toggle("open", isOpen);
-  });
-
-  // Keyboard support
-  header.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      header.click();
-    }
-  });
-
-  card.append(header, body);
-  return card;
+  issues.forEach((issue, index) => container.append(createCard(issue, index)));
 }
