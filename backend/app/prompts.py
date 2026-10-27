@@ -1,11 +1,6 @@
 """
-prompts.py v5 - Bộ Prompt cho Người 3 (Prompt Engineering & Research)
-=====================================================================
-Dự án: AI Code Reviewer - Trợ lý đánh giá chất lượng và an toàn mã nguồn.
 
-NÂNG CẤP v5 (rút ra từ kết quả hybrid/dev ngày 2026-10-27, 30 file):
-Lỗi còn lại ở v4 phần lớn là model nhỏ KHÔNG tuân theo luật dài (prompt ~6k token, rubric nằm giữa prompt),
-nên v5 chuyển trọng tâm từ "viết thêm luật" sang "ít luật hơn + mẫu sửa + code thực thi luật":
+Dự án: AI Code Reviewer - Trợ lý đánh giá chất lượng và an toàn mã nguồn.
 
   PROMPT
   - Rubric theo chủ đề (select_topics): chỉ đưa vào prompt các luật liên quan tới cảnh báo/đoạn mã đang xét
