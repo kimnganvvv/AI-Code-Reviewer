@@ -79,4 +79,4 @@ def llm_is_configured() -> bool:
         return False
     if LLM_API_KEY:
         return True
-    return any(host in LLM_BASE_URL for host in ("localhost", "127.0.0.1"))
+    return any(host in LLM_BASE_URL for host in ("localhost", "127.0.0.1", "host.docker.internal"))

@@ -10,6 +10,7 @@
 - [Các chế độ review](#các-chế-độ-review)
 - [Cấu trúc repository](#cấu-trúc-repository)
 - [Cài đặt và chạy backend](#cài-đặt-và-chạy-backend)
+- [Chạy bằng Docker](#chạy-bằng-docker)
 - [Cấu hình LLM và Ollama](#cấu-hình-llm-và-ollama)
 - [API](#api)
 - [Web UI](#web-ui)
@@ -18,6 +19,7 @@
 - [Kiểm thử và lint](#kiểm-thử-và-lint)
 - [Triển khai và giới hạn bảo mật](#triển-khai-và-giới-hạn-bảo-mật)
 - [Xử lý sự cố](#xử-lý-sự-cố)
+- [Báo lỗi và thảo luận](#báo-lỗi-và-thảo-luận)
 - [Giấy phép](#giấy-phép)
 
 ## Kiến trúc và luồng review
@@ -76,6 +78,9 @@ Nếu LLM chưa cấu hình, `bandit` và `tools` vẫn chạy bình thường. 
 ## Cấu trúc repository
 
 ```text
+Dockerfile               # Image production (non-root, healthcheck)
+compose.yaml             # Chạy backend local bằng Docker Compose
+.dockerignore
 backend/
   app/
     main.py              # FastAPI routes, CORS và static web
@@ -138,6 +143,75 @@ Copy-Item .\backend\.env.example .\backend\.env
 ```
 
 Sau khi sửa `.env`, cần khởi động lại backend để nạp giá trị mới. Không commit `backend/.env` hoặc API key.
+
+## Chạy bằng Docker
+
+`Dockerfile` dùng `python:3.12-slim`, cài `backend/requirements.txt` và chạy Uvicorn bằng user không có quyền root (UID 10001). Image không chứa `backend/.env`, `.git`, virtualenv hoặc cache. Container đọc cấu hình từ biến môi trường, bind `0.0.0.0`, dùng `PORT` do nền tảng cấp (mặc định `8000`) và có healthcheck gọi `/health`.
+
+Yêu cầu Docker Engine/Desktop; `compose.yaml` dùng cú pháp `env_file.required` nên cần Docker Compose **2.24 trở lên**.
+
+### Bước 1: Build image
+
+```powershell
+docker build -t ai-code-reviewer:local .
+```
+
+Chạy lại lệnh build sau khi đổi code cần đóng gói. Bước này không cài package vào `.venv` và không thay đổi cách chạy backend trực tiếp bằng Python.
+
+### Bước 2: Chạy container
+
+Ví dụ dùng cổng host `8080` để không đụng backend local thường chạy ở `8000`:
+
+```powershell
+docker run --rm --name ai-code-reviewer -p 8080:8000 ai-code-reviewer:local
+```
+
+Mở `http://localhost:8080/` (UI), `http://localhost:8080/docs` (Swagger) hoặc `http://localhost:8080/health`. Docker chỉ dùng image đã build; lệnh chạy Python local ở phần trước vẫn giữ nguyên.
+
+Để kiểm tra override `PORT` giống nền tảng cloud:
+
+```powershell
+docker run --rm -p 8080:8080 -e PORT=8080 ai-code-reviewer:local
+```
+
+### Truyền cấu hình LLM an toàn
+
+Không đưa API key vào image hoặc commit. Dùng file `backend/.env` đã được gitignore:
+
+```powershell
+docker run --rm --name ai-code-reviewer -p 8080:8000 --env-file backend\.env ai-code-reviewer:local
+```
+
+Hoặc truyền biến từ môi trường shell mà không ghi giá trị key trực tiếp vào lệnh:
+
+```powershell
+$env:LLM_API_KEY = "..."
+docker run --rm -p 8080:8000 -e LLM_API_KEY -e LLM_BASE_URL -e LLM_MODEL -e USE_LLM ai-code-reviewer:local
+```
+
+Với Ollama trên máy host, `127.0.0.1` bên trong container trỏ vào chính container. Trên Docker Desktop, đặt `LLM_BASE_URL=http://host.docker.internal:11434/v1`; `compose.yaml` đã thêm host gateway này. Trên Linux, thêm `--add-host=host.docker.internal:host-gateway` và cho Ollama lắng nghe địa chỉ Docker truy cập được (ví dụ `OLLAMA_HOST=0.0.0.0`). Với provider cloud, dùng URL/API key của provider và set secret trên nền tảng triển khai.
+
+### Docker Compose
+
+`compose.yaml` chạy một service backend và **không** tải model vào image. Nếu `backend/.env` tồn tại, Compose nạp file đó; nếu không, container dùng giá trị mặc định (Bandit/tools vẫn chạy, LLM có thể tắt).
+
+```powershell
+docker compose build
+docker compose up -d
+docker compose ps
+docker compose logs -f api
+```
+
+Compose dùng cổng host `8000` mặc định. Nếu cổng này đang chạy backend local, đặt `$env:API_PORT=8080` trước `docker compose up -d`, rồi mở `http://localhost:8080/`. Dừng bằng `docker compose down`. Compose là cách chạy thay thế; không cần dùng nếu đã chạy riêng bằng `docker build` và `docker run`.
+
+### Cập nhật image
+
+```powershell
+docker compose build --pull
+docker compose up -d
+```
+
+Hoặc build lại tag và deploy lại trên nền tảng. Image dùng chung cho local và cloud; không bật `--reload` trong production.
 
 ## Cấu hình LLM và Ollama
 
@@ -374,7 +448,17 @@ Kiểm thử extension dùng Playwright và Chromium/Chrome; cài các thành ph
 
 ## Triển khai và giới hạn bảo mật
 
-Repository có cấu hình Render ở `render.yaml` và lệnh start trong `Procfile`. Cấu hình Render hiện hướng tới provider OpenAI-compatible qua biến môi trường; Ollama chạy trên máy cá nhân thường không truy cập trực tiếp được từ dịch vụ hosting.
+Repository dùng chung một `Dockerfile` cho local và cloud. `Procfile` chỉ còn là fallback nếu nền tảng dùng build Python native (ưu tiên `Dockerfile` khi có). Cấu hình hướng tới provider OpenAI-compatible qua biến môi trường; Ollama chạy trên máy cá nhân thường không truy cập trực tiếp được từ dịch vụ hosting. Chỉ dùng Docker để triển khai cloud.
+
+### Triển khai bằng Docker
+
+Tạo **Web Service** chạy Docker từ repository. Chỉ định `Dockerfile` (`./Dockerfile`), health check path `/health`. Nền tảng sẽ cấp biến `PORT`; Dockerfile đã bind `0.0.0.0:$PORT`. Truyền cấu hình LLM qua **Environment/Secret** (không commit API key). Không sử dụng Render Blueprint nữa, chỉ dùng Docker.
+
+### Railway
+
+Tạo project từ repository; Railway tự nhận `Dockerfile` và dùng `PORT` của nền tảng. Set biến môi trường/secret trong dashboard, không cần start command riêng.
+
+Các thao tác tạo tài khoản, push image hoặc deploy cloud cần quyền và có thể phát sinh chi phí; repository này chưa được deploy công khai trong quá trình kiểm tra.
 
 Trước khi mở backend ra Internet, cần xem lại:
 
@@ -397,6 +481,28 @@ Trước khi mở backend ra Internet, cần xem lại:
 | Extension không kết nối | Kiểm tra `http://localhost:8000/health`, URL ở `extension/src/config.js` và `host_permissions`; reload extension sau khi sửa manifest/code. |
 | Benchmark dừng ngay | Kiểm tra backend, split/mẫu, `/health`; mode `llm`/`filter`/`hybrid` cần LLM được cấu hình. |
 | Benchmark chạy rất lâu | Thời gian phụ thuộc số mẫu, số repeats, mode, model và tốc độ Ollama; bắt đầu với `--modes hybrid --repeats 1`. |
+| Docker: `port is already allocated` | Đổi cổng host bằng `-p 8080:8000` hoặc `$env:API_PORT=8080; docker compose up -d`. |
+| Container `unhealthy` | Xem `docker logs <container>` và `docker inspect --format '{{.State.Health.Status}}' <container>`; kiểm tra `PORT` và `/health`. |
+| Docker không thấy env/LLM | Dùng `--env-file backend\.env` hoặc Compose; `127.0.0.1` không trỏ tới host. Dùng `host.docker.internal`/URL provider rồi tạo lại container. |
+| Docker Compose báo thiếu `backend/.env` | Cấu hình hiện tại để optional; nâng Compose >=2.24 hoặc tạo file từ `backend\.env.example`. |
+| Nền tảng trả `502` hoặc health fail | App phải bind `0.0.0.0` và `$PORT`; kiểm tra log nền tảng và health check `/health`. |
+| `Permission denied` trong container | Container chạy UID 10001; không mount thư mục cần ghi do root sở hữu, hoặc cấp quyền phù hợp. |
+
+## Báo lỗi và thảo luận
+
+GitHub Issues là kênh chính (bug tracker) để báo lỗi, đề xuất tính năng và theo dõi tiến độ sửa:
+
+- Tạo issue: <https://github.com/kimnganvvv/AI-Code-Reviewer/issues/new>
+- Danh sách issue: <https://github.com/kimnganvvv/AI-Code-Reviewer/issues>
+
+Khi báo lỗi, nên kèm:
+
+- Môi trường: OS, phiên bản Python, cách chạy (Web UI hoặc Chrome Extension).
+- Chế độ review đang dùng: `bandit`, `tools`, `llm`, `filter` hoặc `hybrid`.
+- Các bước tái hiện và đoạn code tối thiểu (đã xóa dữ liệu nhạy cảm, API key).
+- Log lỗi hoặc response JSON, ảnh chụp màn hình nếu có.
+
+GitHub Discussions (nếu được bật) là kênh phụ cho câu hỏi, ý tưởng và thảo luận dài; không bắt buộc. Nếu Discussions chưa bật, dùng Issues là đủ.
 
 ## Giấy phép
 

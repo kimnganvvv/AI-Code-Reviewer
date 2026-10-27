@@ -1,0 +1,21 @@
+name: ai-code-reviewer
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-code-reviewer:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      PORT: "8000"
+    env_file:
+      - path: backend/.env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - no-new-privileges:true
