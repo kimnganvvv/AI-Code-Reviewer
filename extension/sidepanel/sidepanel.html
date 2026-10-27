@@ -14,13 +14,7 @@
   <header>
     <div class="brand">
       <div class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z"></path>
-          <path d="M12 12 20 7.5"></path>
-          <path d="M12 12v9"></path>
-          <path d="M12 12 4 7.5"></path>
-          <path d="m9 12 2 2 4-4"></path>
-        </svg>
+        <img src="../icons/logo.png" alt="" width="26" height="26" />
       </div>
       <h1>AI Code Reviewer</h1>
     </div>
@@ -51,11 +45,11 @@
       <section class="controls">
         <label>Chế độ review
           <select id="mode-select" class="seg">
-            <option value="bandit">Bandit</option>
-            <option value="tools">Công cụ tĩnh</option>
-            <option value="llm">LLM</option>
-            <option value="filter">Công cụ + LLM lọc</option>
             <option value="hybrid" selected>Hybrid · Đủ 3 tầng</option>
+            <option value="filter">Công cụ + LLM lọc</option>
+            <option value="tools">Chỉ công cụ tĩnh</option>
+            <option value="bandit">Chỉ Bandit</option>
+            <option value="llm">Chỉ LLM</option>
           </select>
         </label>
       </section>

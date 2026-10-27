@@ -24,10 +24,17 @@ Thiết kế trung tâm — design/
 
 === 3) sync.py ===
 - Sao chép design/tokens.css → extension/src/tokens.css
-- Sao chép design/tokens.css → backend/web/static/css/tokens.css
 - Sao chép design/components.css → extension/src/components.css
-- Sao chép design/components.css → backend/web/static/css/components.css
-- Ghi chú "AUTO-GENERATED, sửa ở design/" ở đầu mỗi file đã sao chép
+- Sao chép design/icons/brand/* + design/icons/ui/* → extension/icons/
+- Sao chép design/icons/brand/* + design/icons/ui/* → backend/web/static/icons/
+- Sao chép design/icons/brand/favicon.ico → backend/web/favicon.ico
+- Ghi chú "AUTO-GENERATED, sửa ở design/" ở đầu mỗi file CSS đã sao chép
+- Không sửa tay file trong extension/icons/ hoặc backend/web/static/icons/
+
+=== 3b) design/icons/ ===
+- brand/: logo.svg, icon16.png, icon48.png, icon128.png, favicon.ico
+- ui/: sprite.svg (mỗi icon là một <symbol id="...">, 24x24, stroke=currentColor)
+- Chạy `python design/sync.py` sau khi thêm/đổi icon
 
 === 4) README.md ===
 - Hướng dẫn sửa token, chạy kiểm tra tương phản, đồng bộ

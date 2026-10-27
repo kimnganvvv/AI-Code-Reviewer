@@ -427,8 +427,11 @@ async function initMode() {
     saveSettings({ mode: modeSelect.value });
   });
 
+  const modes = Array.from(modeSelect.options, (option) => option.value);
   const settings = await getSettings();
-  modeSelect.value = settings.mode;
+  const mode = modes.includes(settings.mode) ? settings.mode : "hybrid";
+  modeSelect.value = mode;
+  if (mode !== settings.mode) saveSettings({ mode });
   render();
 }
 
