@@ -1,165 +1,108 @@
-<!doctype html>
-<html lang="vi">
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Code Reviewer</title>
+  <link rel="stylesheet" href="../src/tokens.css">
+  <link rel="stylesheet" href="../src/components.css">
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
-  <!-- Status Bar (sticky top) -->
-  <header class="status-bar" role="status" aria-live="polite">
-    <span id="backend-status" class="status-pill" title="Nhấp để kiểm tra lại kết nối">
-      <span class="dot"></span>
-      <span id="backend-status-text">Đang kiểm tra backend...</span>
-    </span>
-    <a id="open-web" class="open-web-btn" href="#" target="_blank" rel="noopener">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-      <span>Mở bản đầy đủ</span>
-    </a>
-  </header>
+  <div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
 
-  <main class="main-content">
-    <!-- Input Section -->
-    <section class="input-section" aria-labelledby="input-label">
-      <label id="input-label" class="input-label">Code Python cần review</label>
-
-      <div class="textarea-wrapper">
-        <textarea id="code-input" placeholder="Dán code Python vào đây" spellcheck="false" rows="10" wrap="off" aria-describedby="code-meta"></textarea>
-        <div id="code-meta" class="code-meta" aria-live="polite">
-          <span id="code-stats">0 dòng · 0 / 20.000 ký tự</span>
-          <span id="code-hint" class="hint" hidden></span>
-        </div>
-      </div>
-
-      <div class="mode-section" aria-labelledby="mode-label">
-        <label id="mode-label" class="mode-label">Chế độ review</label>
-        <p id="mode-desc" class="mode-desc">Hybrid: Bandit + LLM — ít báo nhầm hơn, bắt thêm lỗi bug/quality</p>
-        <div class="segmented" role="radiogroup" aria-label="Chế độ review">
-          <button type="button" class="segment" role="radio" aria-checked="false" data-mode="bandit" aria-label="Bandit — Chỉ SAST, nhanh, không cần API key">
-            <span>Bandit</span>
-            <span class="segment-desc">Chỉ SAST</span>
-          </button>
-          <button type="button" class="segment" role="radio" aria-checked="false" data-mode="llm" aria-label="LLM — Chỉ AI, tìm bug/quality">
-            <span>LLM</span>
-            <span class="segment-desc">Chỉ AI</span>
-          </button>
-          <button type="button" class="segment active" role="radio" aria-checked="true" data-mode="hybrid" aria-label="Hybrid (Khuyên dùng) — Bandit + LLM, ít báo nhầm hơn">
-            <span>Hybrid <span class="badge-recommended">Khuyên dùng</span></span>
-            <span class="segment-desc">Bandit + LLM</span>
-          </button>
-        </div>
-        <p id="mode-hint" class="hint hint-warning" hidden></p>
-      </div>
-
-      <div class="action-row">
-        <button id="btn-analyze" type="button" class="btn btn-primary">
-          <span class="btn-text">Phân tích</span>
-        </button>
-        <button id="btn-cancel" type="button" class="btn btn-danger" hidden>Huỷ</button>
-        <button id="btn-clear" type="button" class="btn btn-ghost">Xoá</button>
-      </div>
-    </section>
-
-    <!-- Analyzing overlay (shows over textarea when analyzing) -->
-    <div id="analyzing-overlay" class="analyzing-overlay" hidden aria-hidden="true">
-      <div class="skeleton-card">
-        <div class="skeleton-line long"></div>
-        <div class="skeleton-line medium" style="margin-top:8px"></div>
-        <div class="skeleton-line short" style="margin-top:8px"></div>
-      </div>
-      <div class="skeleton-card" style="margin-top:12px">
-        <div class="skeleton-line long"></div>
-        <div class="skeleton-line medium" style="margin-top:8px"></div>
-        <div class="skeleton-line short" style="margin-top:8px"></div>
-      </div>
-      <div class="skeleton-card" style="margin-top:12px">
-        <div class="skeleton-line long"></div>
-        <div class="skeleton-line medium" style="margin-top:8px"></div>
-        <div class="skeleton-line short" style="margin-top:8px"></div>
-      </div>
-    </div>
-
-    <!-- Empty State -->
-    <div id="empty-state" class="empty-state" hidden>
-      <div class="empty-icon" aria-hidden="true">
-        <svg class="icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-          <path d="M9 12l2 2 4-4"></path>
+  <header>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z"></path>
+          <path d="M12 12 20 7.5"></path>
+          <path d="M12 12v9"></path>
+          <path d="M12 12 4 7.5"></path>
+          <path d="m9 12 2 2 4-4"></path>
         </svg>
       </div>
-      <h3>Chưa có kết quả</h3>
-      <p>Bôi đen code trên trang web, chuột phải rồi chọn <strong>"Review với AI Code Reviewer"</strong>, hoặc dán code vào ô trên.</p>
-      <button id="btn-example" type="button" class="btn-link">Dùng code ví dụ</button>
+      <h1>AI Code Reviewer</h1>
     </div>
-
-    <!-- Result Header (shown after analysis) -->
-    <header id="result-header" class="result-header" hidden>
-      <div class="result-summary">
-        <span class="line1" id="result-summary-line1"></span>
-        <span class="line2" id="result-summary-line2"></span>
-      </div>
-      <div class="result-actions">
-        <button id="btn-edit-code" type="button" class="btn btn-ghost" hidden>Sửa code</button>
-      </div>
-    </header>
-
-    <!-- Type Filter Chips -->
-    <div id="type-chips" class="type-chips" hidden role="group" aria-label="Lọc theo loại lỗi">
-      <label class="chip all" tabindex="0">
-        <input type="checkbox" checked data-type="all" aria-label="Tất cả">
-        <span>Tất cả</span>
-        <span class="chip-count" id="chip-count-all">0</span>
-      </label>
-      <label class="chip security" tabindex="0">
-        <input type="checkbox" checked data-type="security" aria-label="Security">
-        <span>Security</span>
-        <span class="chip-count" id="chip-count-security">0</span>
-      </label>
-      <label class="chip bug" tabindex="0">
-        <input type="checkbox" checked data-type="bug" aria-label="Bug">
-        <span>Bug</span>
-        <span class="chip-count" id="chip-count-bug">0</span>
-      </label>
-      <label class="chip quality" tabindex="0">
-        <input type="checkbox" checked data-type="quality" aria-label="Quality">
-        <span>Quality</span>
-        <span class="chip-count" id="chip-count-quality">0</span>
-      </label>
+    <div class="header-right">
+      <button id="health-pill" class="pill status-pill is-checking" type="button" title="Bấm để kiểm tra lại kết nối">
+        <span class="pill-dot" aria-hidden="true"></span>
+        <span id="health-pill-text">Đang kiểm tra…</span>
+      </button>
+      <select id="theme-select" class="btn btn-secondary btn-sm" title="Chủ đề" aria-label="Chủ đề">
+        <option value="auto">Tự động</option>
+        <option value="dark">Tối</option>
+        <option value="light">Sáng</option>
+      </select>
     </div>
+  </header>
 
-    <!-- Severity + Confidence Filters -->
-    <section id="filter-section" class="filter-row" hidden aria-labelledby="filter-label">
-      <div class="filter-select">
-        <label for="filter-severity">Mức nghiêm trọng</label>
-        <select id="filter-severity">
-          <option value="all">Tất cả</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
+  <main>
+    <section class="input-section">
+      <label class="label">Code Python cần review</label>
+      <div class="textarea-wrap">
+        <textarea id="code-input" placeholder="Dán code Python vào đây" spellcheck="false" rows="8"></textarea>
+        <div class="textarea-stats">
+          <span id="code-counter">0 ký tự</span>
+          <span id="code-limit" class="code-limit">20.000 ký tự</span>
+        </div>
       </div>
-      <div class="filter-select">
-        <label for="filter-confidence">Độ tin cậy</label>
-        <select id="filter-confidence">
-          <option value="all">Tất cả</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
+
+      <section class="controls">
+        <label>Chế độ review
+          <select id="mode-select" class="seg">
+            <option value="bandit">Bandit</option>
+            <option value="llm">LLM</option>
+            <option value="hybrid" selected>Hybrid · Khuyên dùng</option>
+          </select>
+        </label>
+      </section>
+
+      <div class="actions">
+        <button id="btn-analyze" class="btn btn-primary btn-lg">Phân tích</button>
+        <button id="btn-clear" class="btn btn-secondary">Xoá</button>
+        <a id="open-web" href="#" target="_blank" rel="noopener" class="btn btn-secondary">Mở bản đầy đủ trên Web ↗</a>
       </div>
     </section>
 
-    <!-- Results count -->
-    <div id="results-count" class="results-count" hidden aria-live="polite">
-      Hiển thị <span id="results-shown">0</span> / <span id="results-total">0</span>
-    </div>
+    <section class="results">
+      <div id="result-controls" class="results-header" hidden>
+        <div class="result-filters">
+          <select id="filter-type" class="chip">
+            <option value="all">Tất cả loại</option>
+            <option value="security">Security</option>
+            <option value="bug">Bug</option>
+            <option value="quality">Quality</option>
+          </select>
+          <select id="filter-severity" class="chip">
+            <option value="all">Tất cả mức độ</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <select id="filter-confidence" class="chip">
+            <option value="all">Tất cả tin cậy</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <span id="result-count" class="result-count">0 lỗi</span>
+      </div>
 
-    <!-- Banner area (for errors, warnings, success) -->
-    <div id="banner-area" hidden></div>
+      <div id="banner" class="banner-host"></div>
 
-    <!-- Issues List -->
-    <section id="issues" aria-label="Danh sách lỗi"></section>
+      <section id="offline-guide" class="offline-guide" aria-labelledby="offline-title" hidden>
+        <div id="offline-title" class="guide-title">Chưa kết nối máy chủ</div>
+        <p class="guide-text">Khởi động backend rồi bấm vào trạng thái ở góc trên để kiểm tra lại.</p>
+        <div class="guide-command-wrap">
+          <pre class="guide-command"><code id="server-command">python -m uvicorn app.main:app --app-dir backend --port 8000</code></pre>
+          <button id="copy-command" class="btn btn-secondary" type="button">Sao chép</button>
+        </div>
+      </section>
+
+      <div id="issues" class="issues-list"></div>
+    </section>
   </main>
 
   <script type="module" src="sidepanel.js"></script>

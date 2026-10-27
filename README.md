@@ -19,6 +19,7 @@ AI Code Reviewer là ứng dụng review mã Python, kết hợp **Bandit SAST**
 - [Triển khai](#triển-khai)
 - [Giới hạn và lưu ý bảo mật](#giới-hạn-và-lưu-ý-bảo-mật)
 - [Xử lý sự cố](#xử-lý-sự-cố)
+- [Giấy phép](#giấy-phép)
 
 ## Tính năng
 
@@ -335,3 +336,9 @@ Trước khi đưa lên môi trường công khai, cần xem lại CORS, xác th
 | Extension không kết nối được | Kiểm tra backend tại `http://localhost:8000/health`, `LOCAL_URL`/`DEPLOY_URL` và `host_permissions` trong manifest. |
 | Benchmark không chạy `llm`/`hybrid` | Kiểm tra `/health`; điền cấu hình LLM và restart backend. Chỉ dùng `--force` khi chủ động muốn chạy dù health báo LLM tắt. |
 | LLM chậm hoặc HTTP 429 | Kiểm tra giới hạn của nhà cung cấp, model, timeout và retry trong `backend/app/llm_client.py`; latency thay đổi tùy môi trường. |
+
+## Giấy phép
+
+Mã nguồn dự án được phát hành theo **MIT License** — xem [LICENSE](LICENSE). MIT là giấy phép mã nguồn mở đã được OSI phê duyệt.
+
+Các thư viện bên thứ ba giữ giấy phép riêng và tương thích với MIT. CodeMirror được phân phối theo MIT; xem [CODEMIRROR-LICENSE.txt](backend/web/static/vendor/CODEMIRROR-LICENSE.txt). Khi phân phối lại sản phẩm, giữ nguyên copyright và license notice của dự án cùng các thành phần bên thứ ba.

@@ -64,6 +64,28 @@
 
   /* ---------------------------------------------------------- code editor */
   var cm = null;
+
+  function currentThemeAttr() {
+    var theme = document.documentElement.getAttribute("data-theme");
+    return (theme === "light" || theme === "dark") ? theme : "auto";
+  }
+
+  function prefersDark() {
+    if (!window.matchMedia) return true;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+
+  function currentEditorTheme() {
+    var theme = currentThemeAttr();
+    if (theme === "light") return "reviewer-light";
+    if (theme === "dark") return "reviewer-dark";
+    return prefersDark() ? "reviewer-dark" : "reviewer-light";
+  }
+
+  function applyEditorTheme() {
+    if (cm) cm.setOption("theme", currentEditorTheme());
+  }
+
   var editorTextarea = document.getElementById("editor");
   if (editorTextarea && typeof CodeMirror !== "undefined") {
     try {
@@ -72,7 +94,7 @@
         mode: "python",
         indentUnit: 4,
         tabSize: 4,
-        theme: "material-darker",
+        theme: currentEditorTheme(),
         viewportMargin: Infinity,
         extraKeys: {
           "Ctrl-Enter": function () { runReview(); },
@@ -82,6 +104,23 @@
       cm.setSize("100%", "100%");
     } catch (e) {
       console.warn("Không thể khởi tạo CodeMirror:", e);
+    }
+  }
+
+  if (cm) {
+    if (window.matchMedia) {
+      var schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      var onSchemeChange = function () {
+        if (currentThemeAttr() === "auto") applyEditorTheme();
+      };
+      if (schemeQuery.addEventListener) schemeQuery.addEventListener("change", onSchemeChange);
+      else if (schemeQuery.addListener) schemeQuery.addListener(onSchemeChange);
+    }
+    if (typeof MutationObserver !== "undefined") {
+      new MutationObserver(applyEditorTheme).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme"]
+      });
     }
   }
 
@@ -150,6 +189,25 @@
     if (cls) node.className = cls;
     if (text !== undefined) node.textContent = text;
     return node;
+  }
+
+  function makeSvgIcon(className) {
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.6");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("class", className);
+    ["M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z", "m9 12 2 2 4-4"].forEach(function (d) {
+      var path = document.createElementNS(ns, "path");
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    });
+    return svg;
   }
 
   function setMeta(text, level) {
@@ -566,11 +624,7 @@
 
   function emptyState(title, sub) {
     var wrap = el("div", "empty");
-    wrap.innerHTML =
-      '<svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-      'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-      '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9L12 3Z"></path>' +
-      '<path d="m9 12 2 2 4-4"></path></svg>';
+    wrap.appendChild(makeSvgIcon("empty-icon"));
     wrap.appendChild(el("div", "empty-title", title));
     wrap.appendChild(el("div", "empty-sub", sub));
     return wrap;
@@ -592,7 +646,7 @@
     var list = filteredIssues();
 
     clearActiveLines();
-    issuesEl.innerHTML = "";
+    issuesEl.replaceChildren();
     if (countEl) {
       var totalAll = allIssues ? allIssues.length : 0;
       countEl.textContent = (list.length !== totalAll) ? (list.length + " / " + totalAll) : String(list.length);
@@ -1333,7 +1387,7 @@
     var listEl = els.historyList || document.getElementById("historyList");
     var emptyEl = els.historyEmpty || document.getElementById("historyEmpty");
     if (!listEl) return;
-    listEl.innerHTML = "";
+    listEl.replaceChildren();
 
     var entries = [];
     try {

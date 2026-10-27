@@ -1,5 +1,7 @@
 """Unit test pipeline: Line Validation và Merge/Dedup."""
-from app import pipeline
+import json
+
+from app import pipeline, prompts
 
 
 def test_validate_lines_drops_invalid():
@@ -15,7 +17,6 @@ def test_validate_lines_drops_invalid():
 
 
 def test_merge_bandit_llm_same_cwe():
-    code = "import subprocess\nsubprocess.call('ls', shell=True)\n"
     b = [{"line": 2, "type": "security", "severity": "high", "confidence": "medium", "cwe_id": "CWE-78", "message": "shell=True", "explanation": "", "suggestion": "", "source": "bandit", "_test_id": "B602"}]
     l = [{"line": 2, "type": "security", "severity": "high", "confidence": "high", "cwe_id": "CWE-78", "message": "Command injection via shell", "explanation": "dùng shell=True", "suggestion": "", "source": "llm"}]
     merged, mcount = pipeline.merge_duplicates(b + l)
@@ -25,14 +26,45 @@ def test_merge_bandit_llm_same_cwe():
     assert "_test_id" not in merged[0]
 
 
-def test_sanitize_clamps():
-    raw = [{"line": "5", "type": "CRITICAL", "severity": "bad", "confidence": "x", "source": "weird", "message": "m"}]
-    out = pipeline.sanitize_llm_issues(raw)
-    assert out[0]["line"] == 5
-    assert out[0]["type"] == "quality"
-    assert out[0]["severity"] == "medium"
-    assert out[0]["confidence"] == "low"
-    assert out[0]["source"] == "llm"
+def test_parse_and_validate_llm_json_clamps_and_drops():
+    raw = json.dumps({
+        "bandit_verdicts": [],
+        "new_issues": [
+            {
+                "line": "5",
+                "end_line": "999",
+                "type": "bug",
+                "severity": "bad",
+                "confidence": "x",
+                "cwe_id": "79",
+                "message": "m",
+                "explanation": "e",
+            },
+            {
+                "line": 999,
+                "type": "security",
+                "severity": "high",
+                "confidence": "high",
+                "message": "ảo giác",
+                "explanation": "dòng không tồn tại",
+            },
+        ],
+    })
+    out = prompts.parse_and_validate_llm_json(raw, total_lines=10)
+    assert out["parse_error"] is False
+    assert out["dropped_new_issues"] == 1
+    assert len(out["new_issues"]) == 1
+    issue = out["new_issues"][0]
+    assert issue["line"] == 5
+    assert issue["end_line"] == 10
+    assert issue["type"] == "bug"
+    assert issue["severity"] == "medium"
+    assert issue["confidence"] == "low"
+    assert issue["cwe_id"] == "CWE-79"
+
+    malformed = prompts.parse_and_validate_llm_json("không phải JSON", total_lines=10)
+    assert malformed["parse_error"] is True
+    assert malformed["new_issues"] == []
 
 
 BANDIT_ISSUE = {
@@ -45,6 +77,21 @@ LLM_ISSUE = {
     "cwe_id": "CWE-78", "message": "Command injection", "explanation": "",
     "suggestion": "", "source": "llm",
 }
+LLM_RESULT = {
+    "bandit_verdicts": [],
+    "new_issues": [LLM_ISSUE],
+    "parse_error": False,
+    "dropped_new_issues": 0,
+    "rejected_suggestions": 0,
+}
+
+
+def fake_llm_review(*_args, **_kwargs):
+    return {
+        **LLM_RESULT,
+        "bandit_verdicts": [dict(v) for v in LLM_RESULT["bandit_verdicts"]],
+        "new_issues": [dict(i) for i in LLM_RESULT["new_issues"]],
+    }
 
 
 def test_mode_bandit_skips_llm(monkeypatch):
@@ -71,7 +118,7 @@ def test_mode_llm_skips_bandit(monkeypatch):
         raise AssertionError("mode=llm không được chạy Bandit")
 
     monkeypatch.setattr(pipeline, "run_bandit", _boom)
-    monkeypatch.setattr(pipeline, "llm_review", lambda *_args, **_kwargs: [dict(LLM_ISSUE)])
+    monkeypatch.setattr(pipeline, "llm_review", fake_llm_review)
     res = pipeline.review_code(code, mode="llm")
     assert res["meta"]["mode"] == "llm"
     assert res["meta"]["bandit_count"] == 0
@@ -83,7 +130,7 @@ def test_mode_hybrid_merges_both(monkeypatch):
     code = "import subprocess\nsubprocess.call('ls', shell=True)\n"
     monkeypatch.setattr(pipeline, "run_bandit", lambda _code: [dict(BANDIT_ISSUE)])
     monkeypatch.setattr(pipeline, "llm_is_configured", lambda: True)
-    monkeypatch.setattr(pipeline, "llm_review", lambda *_args, **_kwargs: [dict(LLM_ISSUE)])
+    monkeypatch.setattr(pipeline, "llm_review", fake_llm_review)
     res = pipeline.review_code(code, mode="hybrid")
     assert res["meta"]["mode"] == "hybrid"
     assert res["meta"]["bandit_count"] == 1

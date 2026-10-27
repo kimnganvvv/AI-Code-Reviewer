@@ -44,6 +44,20 @@ def test_review_rejects_invalid_mode():
     assert r.status_code == 422
 
 
+def test_review_preserves_code_verbatim(monkeypatch):
+    captured = {}
+    code = "\n# Tiếng Việt ✓\r\n\tmessage = \"\"\"line  \r\nnext\"\"\"  \r\n\r\n"
+
+    def fake_review(received_code: str, mode: str) -> dict:
+        captured["code"] = received_code
+        return _fake_result(mode)
+
+    monkeypatch.setattr(main_module, "review_code", fake_review)
+    r = client.post("/review", json={"code": code, "mode": "bandit"})
+    assert r.status_code == 200
+    assert captured["code"] == code
+
+
 def test_health():
     r = client.get("/health")
     assert r.status_code == 200
@@ -90,8 +104,9 @@ def test_mock_issues_point_to_real_sample_lines():
 
 
 def test_review_empty_code():
-    r = client.post("/review", json={"code": "   "})
-    assert r.status_code == 400
+    for code in ("", "   ", "\n\t  "):
+        r = client.post("/review", json={"code": code})
+        assert r.status_code == 400
 
 
 def test_review_too_long():
