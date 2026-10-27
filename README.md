@@ -18,6 +18,7 @@
 - [Kiểm thử và lint](#kiểm-thử-và-lint)
 - [Triển khai và giới hạn bảo mật](#triển-khai-và-giới-hạn-bảo-mật)
 - [Xử lý sự cố](#xử-lý-sự-cố)
+- [Báo lỗi và thảo luận](#báo-lỗi-và-thảo-luận)
 - [Giấy phép](#giấy-phép)
 
 ## Kiến trúc và luồng review
@@ -397,6 +398,22 @@ Trước khi mở backend ra Internet, cần xem lại:
 | Extension không kết nối | Kiểm tra `http://localhost:8000/health`, URL ở `extension/src/config.js` và `host_permissions`; reload extension sau khi sửa manifest/code. |
 | Benchmark dừng ngay | Kiểm tra backend, split/mẫu, `/health`; mode `llm`/`filter`/`hybrid` cần LLM được cấu hình. |
 | Benchmark chạy rất lâu | Thời gian phụ thuộc số mẫu, số repeats, mode, model và tốc độ Ollama; bắt đầu với `--modes hybrid --repeats 1`. |
+
+## Báo lỗi và thảo luận
+
+GitHub Issues là kênh chính (bug tracker) để báo lỗi, đề xuất tính năng và theo dõi tiến độ sửa:
+
+- Tạo issue: <https://github.com/kimnganvvv/AI-Code-Reviewer/issues/new>
+- Danh sách issue: <https://github.com/kimnganvvv/AI-Code-Reviewer/issues>
+
+Khi báo lỗi, nên kèm:
+
+- Môi trường: OS, phiên bản Python, cách chạy (Web UI hoặc Chrome Extension).
+- Chế độ review đang dùng: `bandit`, `tools`, `llm`, `filter` hoặc `hybrid`.
+- Các bước tái hiện và đoạn code tối thiểu (đã xóa dữ liệu nhạy cảm, API key).
+- Log lỗi hoặc response JSON, ảnh chụp màn hình nếu có.
+
+GitHub Discussions (nếu được bật) là kênh phụ cho câu hỏi, ý tưởng và thảo luận dài; không bắt buộc. Nếu Discussions chưa bật, dùng Issues là đủ.
 
 ## Giấy phép
 

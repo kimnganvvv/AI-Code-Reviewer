@@ -116,21 +116,15 @@ Các khóa của `meta` (theo `ReviewMeta`):
 - **Phát triển song song**: luôn dùng `/mock/review` khi chưa sẵn sàng cấu hình LLM. Giúp Người 2 làm Extension và Người 3 tinh chỉnh prompt mà không cần API key.
 - **Đo 3 chế độ**: dùng cùng một bộ `samples/`, lần lượt gọi `mode=bandit`, `mode=llm`, `mode=hybrid` để tính Precision / Recall / F1 / FPR / Latency. Quan trọng: cùng một endpoint `/review?mode=...` có thể chạy 3 thí nghiệm mà không cần deploy lại.
 
-### 5.1 Quy tắc gộp trùng (Merge/Dedup)
+### 5.1 Khử trùng lặp hiện tại
 
-`merge_duplicates()` là heuristic (không phải bằng chứng chắc chắn hai issue là cùng một lỗi). Quy tắc ghép:
+Pipeline hiện không có hàm `merge_duplicates()` để gộp danh sách Issue sau khi review. Có hai bước riêng:
 
-1. **Bandit–Bandit**: chỉ gộp khi cùng `test_id` và cùng `line`.
-   → Nếu không có điều kiện này, `import subprocess` (B404) và `shell=True` (B602) ở cùng dòng sẽ bị gộp nhầm.
-2. **LLM–LLM**: chỉ gộp khi cả hai có **cùng `cwe_id` khác `null`** và **cùng `line`**.
-   → Không dùng fallback theo `type`/`message`; thiếu `cwe_id` hoặc lệch dòng thì giữ riêng.
-3. **Nguồn mới chưa có trong issue đích** (thường là Bandit–LLM):
-   - **Cùng `cwe_id` khác `null` và lệch dòng ≤ 1** → cùng một lỗi.
-   - **Trùng dòng + trùng `type`** (`security`/`bug`) → cùng một lỗi.
-   - **Trùng dòng + ≥ 40% từ khóa chung** trong `message` → cùng một lỗi (fallback).
+1. **Candidate từ công cụ (tầng 1)**: `dedupe_candidates()` trong `backend/app/candidates.py` sắp xếp theo ưu tiên `bandit` → `ruff` → `static`. Cùng công cụ thì trùng khi `rule_id` và `line` giống nhau; khác công cụ thì trùng khi có cùng `cwe_id` khác `null` và lệch tối đa 1 dòng. Candidate ưu tiên cao hơn được giữ nguyên; candidate còn lại bị bỏ.
+2. **Finding LLM tầng 3**: `drop_overlapping_gaps()` loại finding tầng 3 nếu cùng CWE và vùng dòng chồng/lân cận (dung sai 1 dòng) với bất kỳ candidate tầng 1 nào. Việc này áp dụng cả khi candidate đã bị LLM tầng 2 loại, để tầng 3 không đưa lại finding đó.
 
-Khi gộp:
-- `source` → `"both"` cho **mọi** lần gộp, kể cả LLM–LLM và Bandit–Bandit. Ngoài ra `apply_bandit_verdicts()` cũng đặt `both` khi LLM giữ một cảnh báo Bandit. Vì vậy `both` **không** đảm bảo có đủ hai nguồn; với LLM–LLM, `both` không có nghĩa Bandit cũng xác nhận.
-- Giữ **dòng của issue đích** (issue đứng trước). Pipeline xếp Bandit trước LLM nên gộp Bandit–LLM thường giữ dòng Bandit.
-- Giữ `explanation`/`message` **dài hơn** (LLM thường chi tiết hơn).
-- `severity` lấy **cao hơn**; `confidence` lấy **cao hơn** (LLM đã kiểm chứng có context → đáng tin hơn cảnh báo thô).
+`apply_filter_verdicts()` chuyển verdict tầng 2 thành Issue; nó không gộp hai Issue theo `message`. Khi candidate được LLM xác nhận, `source` thành `both`; điều này có nghĩa công cụ tạo candidate và LLM tầng 2 cùng xác nhận. Finding tầng 3 có `source = llm`. Candidate không được gửi hoặc không nhận verdict được giữ theo chính sách fallback.
+
+### 5.2 Suggestion và kiểm tra
+
+`suggestion` luôn là chuỗi trong hợp đồng hiện tại; chuỗi rỗng biểu thị không có bản vá code trả về. Tầng lọc và tầng tìm lỗi thiếu kiểm tra cấu trúc phản hồi, dòng và bản vá theo từng parser. Ở tầng 3, evidence phải xuất hiện trong vùng code quanh finding; tầng 2 kiểm tra suggestion nếu có. Các kiểm tra này là guardrail định dạng/nội dung, không chứng minh finding đúng hoặc bản vá an toàn. API hiện tạo suggestion trong cùng request review; chưa có endpoint riêng để sinh suggestion theo nút bấm.

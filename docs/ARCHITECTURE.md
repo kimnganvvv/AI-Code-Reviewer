@@ -19,7 +19,7 @@ POST /review { code, filename, mode }
      mode=tools/filter/hybrid: Bandit + Ruff + bộ phát hiện AST
   -> mode=filter/hybrid: khử trùng, xếp ưu tiên, gửi ứng viên cho LLM lọc
   -> mode=hybrid: LLM tìm lỗi ngoài phạm vi công cụ
-  -> kiểm tra dòng, bằng chứng, suggestion và trùng lặp
+  -> parser/guardrail theo từng tầng, kiểm tra dòng cuối và sắp xếp findings
   -> { issues: [...], meta: {...} }
 ```
 
@@ -69,7 +69,7 @@ Nếu LLM chưa cấu hình, `llm` trả danh sách rỗng kèm `meta.llm_error`
 - API key chỉ trong `.env`, `.env` đã có trong `.gitignore` → jamais committed vào repo
 - Giới hạn `MAX_CODE_LENGTH = 20000` ký tự → chặn payload quá lớn (HTTP 413)
 - `timeout` cho Bandit (30s) và LLM (90s) → không treo server, tự động terminate
-- Toàn bộ output LLM đều qua `sanitize_llm_issues()` + `validate_lines()` trước khi ra ngoài
+- Output LLM được parser theo tầng kiểm tra schema/field, dòng, evidence (tầng 3), suggestion nếu có và điều kiện riêng; pipeline tiếp tục kiểm tra dòng issue trước khi trả response. Đây là guardrail, không chứng minh finding hay bản vá đúng.
 - Code người dùng được bọc thẻ `<user_code>` trong Prompt (chống prompt injection cơ bản — do Người 3 thiết kế nhưng Backend là nơi áp dụng)
 - File tạm chạy Bandit dùng `TemporaryDirectory` (context manager), tự xóa sau khi hoàn thành
 
