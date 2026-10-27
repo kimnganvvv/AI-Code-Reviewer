@@ -2,6 +2,9 @@ import { USE_MOCK, API_URL } from "./config.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/* Phải lớn hơn LLM_TIMEOUT của backend (hybrid có thể gọi LLM 2 lần), khớp Web UI. */
+const REQUEST_TIMEOUT_MS = 330000;
+
 let currentController = null;
 
 function normalizeResponse(data) {
@@ -33,7 +36,7 @@ export async function reviewCode(code, { mode = "hybrid", signal } = {}) {
   const timeoutId = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, 200000);
+  }, REQUEST_TIMEOUT_MS);
 
   try {
     if (USE_MOCK) {

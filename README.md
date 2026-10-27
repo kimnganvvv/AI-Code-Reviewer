@@ -221,7 +221,7 @@ Backend gọi endpoint OpenAI-compatible tại `LLM_BASE_URL/chat/completions`. 
 USE_LLM=1
 LLM_API_KEY=
 LLM_BASE_URL=http://127.0.0.1:11434/v1
-LLM_MODEL=qwen2.5-coder:3b
+LLM_MODEL=qwen3-coder:30b
 LLM_TEMPERATURE=0
 LLM_TIMEOUT=300
 LLM_STRUCTURED_OUTPUT=json_object
@@ -230,7 +230,7 @@ LLM_STRUCTURED_OUTPUT=json_object
 Đảm bảo Ollama đang chạy và đã tải đúng model. Ví dụ:
 
 ```powershell
-ollama pull qwen2.5-coder:3b
+ollama pull qwen2.5-coder:30b
 ```
 
 Sau đó chạy backend như phần trên. Với Ollama local có thể để `LLM_API_KEY` trống. Backend coi LLM local là đã cấu hình nếu `USE_LLM=1` và URL chứa `localhost` hoặc `127.0.0.1`; điều đó **không xác nhận** Ollama/model đang chạy hoặc request sẽ thành công.

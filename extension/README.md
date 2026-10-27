@@ -38,12 +38,12 @@ export const DEPLOY_URL = "";    // URL deploy (Render/Railway), để rỗng n�
 
 ## Chọn chế độ review
 
-Trong side panel, dropdown **"Chế độ review"**:
-- **Bandit**: chỉ chạy Bandit.
-- **Công cụ tĩnh**: Bandit + Ruff + bộ phát hiện AST, không cần LLM.
-- **LLM**: phân tích bằng LLM độc lập.
+Trong side panel, dropdown **"Chế độ review"** (giống Web UI):
+- **Hybrid · Đủ 3 tầng** (mặc định): công cụ tĩnh + LLM lọc + LLM tìm lỗi còn thiếu.
 - **Công cụ + LLM lọc**: LLM thẩm định ứng viên từ công cụ.
-- **Hybrid** (mặc định): công cụ tĩnh + LLM lọc + LLM tìm lỗi còn thiếu.
+- **Chỉ công cụ tĩnh**: Bandit + Ruff + bộ phát hiện AST, không cần LLM.
+- **Chỉ Bandit**: chỉ chạy Bandit.
+- **Chỉ LLM**: phân tích bằng LLM độc lập, không chạy công cụ.
 
 Chế độ được lưu tự động, lần sau mở lại vẫn giữ nguyên.
 
