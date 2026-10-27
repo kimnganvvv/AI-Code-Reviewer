@@ -1,4 +1,4 @@
-"""Chạy đo: python scripts/run_benchmark.py --modes bandit llm hybrid"""
+"""Chạy đo: python scripts/run_benchmark.py --modes bandit tools filter hybrid"""
 import argparse
 import sys
 
@@ -6,6 +6,8 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from pathlib import Path
 
+ALL_MODES = ["bandit", "tools", "llm", "filter", "hybrid"]
+LLM_MODES = {"llm", "filter", "hybrid"}
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -18,7 +20,13 @@ from src.runner import run_benchmark, save_run
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", default="http://localhost:8000")
-    ap.add_argument("--modes", nargs="+", default=["bandit"], choices=["bandit", "llm", "hybrid"])
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=1300,
+        help="thời gian chờ tối đa mỗi request review (giây; mặc định 1300 cho hybrid với Ollama local)",
+    )
+    ap.add_argument("--modes", nargs="+", default=["bandit"], choices=ALL_MODES)
     ap.add_argument("--split", default="dev", choices=["dev", "holdout", "all"])
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--samples", default=str(ROOT / "samples"))
@@ -27,13 +35,16 @@ def main():
     ap.add_argument("--force", action="store_true", help="vẫn chạy llm/hybrid dù /health báo LLM chưa bật")
     args = ap.parse_args()
 
-    client = HttpReviewClient(args.api)
+    if args.timeout <= 0:
+        ap.error("--timeout phải lớn hơn 0")
+
+    client = HttpReviewClient(args.api, timeout=args.timeout)
     try:
         health = client.health()
     except Exception as ex:  # noqa: BLE001
         sys.exit(f"Không kết nối được {args.api}/health: {ex}")
     print("Health:", health)
-    needs_llm = any(m in ("llm", "hybrid") for m in args.modes)
+    needs_llm = any(m in LLM_MODES for m in args.modes)
     if needs_llm and not health.get("llm_enabled") and not args.force:
         sys.exit("LLM chưa được bật trên backend (llm_enabled=false). Điền LLM_API_KEY rồi khởi động lại, hoặc dùng --force.")
 

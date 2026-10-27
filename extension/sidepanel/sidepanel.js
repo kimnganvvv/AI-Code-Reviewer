@@ -145,14 +145,14 @@ function renderBanners() {
     showBanner(
       "warn",
       "LLM không trả về kết quả hợp lệ",
-      `Đang hiển thị kết quả Bandit. Chi tiết: ${state.meta.llm_error}`,
+      `Đang hiển thị kết quả từ các công cụ phân tích tĩnh. Chi tiết: ${state.meta.llm_error}`,
       [{ label: "Thử lại", onClick: () => analyze(state.lastCode), primary: true }]
     );
   } else if (state.review === "done" && state.issues.length === 0) {
     showBanner("ok", "Không phát hiện vấn đề", "Không có lỗi nào được tìm thấy trong đoạn code này.");
   }
 
-  if (state.health === "ok_no_llm" && modeSelect.value !== "bandit") {
+  if (state.health === "ok_no_llm" && ["llm", "filter", "hybrid"].includes(modeSelect.value)) {
     showBanner(
       "info",
       "LLM chưa được cấu hình trên máy chủ; kết quả có thể chỉ gồm Bandit.",
@@ -240,6 +240,10 @@ function acceptPendingCode(code, { notice = "", tabSize = "" } = {}) {
 
   resetReview();
   codeInput.value = code;
+  /* Setting textarea.value may leave the viewport at the final line. Show the
+     beginning of code received from a web page so it does not look truncated. */
+  codeInput.setSelectionRange(0, 0);
+  codeInput.scrollTop = 0;
   state.sourceNotice = sourceNotice;
   setCodeTabSize(tabSize);
   updateCodeCount();
@@ -353,6 +357,8 @@ function cancelActiveReview() {
 function clearAll() {
   resetReview();
   codeInput.value = "";
+  codeInput.setSelectionRange(0, 0);
+  codeInput.scrollTop = 0;
   state.lastCode = "";
   state.sourceNotice = "";
   setCodeTabSize("");

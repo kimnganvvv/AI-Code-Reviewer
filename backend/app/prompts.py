@@ -105,6 +105,7 @@ Flag only when the untrusted value clearly originates from a function parameter,
 
 [SUGGESTION RULES]
 - 'suggestion' is the exact replacement text for source lines 'line'..'end_line' (inclusive). Keep the original indentation of those lines. Use \\n between lines inside the JSON string.
+- Make the SMALLEST safe local change that fixes the defect. Set 'line' and 'end_line' to only the affected statement or expression; keep all unrelated lines unchanged. Never replace the whole function or file when a smaller patch works.
 - The fix must not change behavior beyond removing the defect and must not use names/APIs absent from the snippet.
 - Set 'suggestion' to null when the issue cannot be fixed safely by a local line change (e.g., refactoring deep nesting, moving a secret to configuration, adding a new import); describe the approach in 'explanation' instead.
 - For a Bandit false positive (keep=false), 'suggestion', 'line' and 'end_line' are null.

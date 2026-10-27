@@ -4,7 +4,7 @@ Endpoints:
 - GET  /health
 - GET  /        -> web/index.html
 - GET  /sample   -> code mẫu
-- POST /review   -> review thật (mode=bandit | llm | hybrid)
+- POST /review   -> review thật (mode=bandit | tools | llm | filter | hybrid; mặc định hybrid = 3 tầng)
 - POST /mock/review -> dữ liệu giả cho team phát triển song song
 """
 
@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import MAX_CODE_LENGTH, WEB_DIR, llm_is_configured
 from .mock_data import SAMPLE_CODE, mock_issues
 from .pipeline import review_code
+from .ruff_runner import ruff_available
 from .schemas import ReviewMode, ReviewRequest, ReviewResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -26,8 +27,9 @@ log = logging.getLogger("ai-code-reviewer")
 
 app = FastAPI(
     title="AI Code Reviewer API",
-    description="Hybrid SAST (Bandit) + LLM, single-pass adjudication. Hợp đồng JSON v2 dùng chung cả nhóm.",
-    version="2.2.0",
+    description="Kiến trúc 3 tầng: công cụ (Bandit/Ruff/static) -> LLM lọc ứng viên -> LLM tìm phần thiếu. "
+                "Hợp đồng JSON v2 (mở rộng tương thích) dùng chung cả nhóm.",
+    version="3.0.0",
 )
 
 app.add_middleware(
@@ -45,7 +47,12 @@ if WEB_DIR.exists():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "llm_enabled": llm_is_configured(), "max_code_length": MAX_CODE_LENGTH}
+    return {
+        "status": "ok",
+        "llm_enabled": llm_is_configured(),
+        "ruff_enabled": ruff_available(),
+        "max_code_length": MAX_CODE_LENGTH,
+    }
 
 
 @app.get("/", include_in_schema=False)
@@ -53,7 +60,8 @@ def index():
     idx = WEB_DIR / "index.html"
     if not idx.exists():
         raise HTTPException(status_code=404, detail="Không tìm thấy web/index.html")
-    return FileResponse(idx)
+    # Keep the UI entry point fresh after frontend updates; app.js has its own versioned URL.
+    return FileResponse(idx, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -71,7 +79,7 @@ def sample():
 
 @app.post("/review", response_model=ReviewResponse)
 def review(payload: ReviewRequest, mode: Optional[ReviewMode] = None):
-    """Review code. `mode` có thể gửi trong body hoặc query (?mode=...).
+    """Review code. `mode` (bandit | tools | llm | filter | hybrid) có thể gửi trong body hoặc query (?mode=...).
 
     Query có độ ưu tiên cao hơn body để tiện đo đạc bằng script:
     `POST /review?mode=bandit`.

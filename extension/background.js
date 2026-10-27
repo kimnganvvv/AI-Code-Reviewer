@@ -12,6 +12,51 @@ async function setPendingSource({ code, notice = "", tabSize = "" }) {
   });
 }
 
+/* Chuẩn hóa text bôi đen: về \n, đổi NBSP (U+00A0, hay gặp trong code đã tô màu cú pháp) thành khoảng trắng
+   thường. Nếu không, Python báo SyntaxError dù code nhìn đúng. */
+function normalizeSelection(text) {
+  return String(text || "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u00a0\u2007\u202f]/g, " ")
+    .replace(/[\u200b\ufeff]/g, "");
+}
+
+function countLines(text) {
+  const t = String(text || "").replace(/\n+$/, "");
+  return t ? t.split("\n").length : 0;
+}
+
+/* Chạy TRONG trang: window.getSelection().toString() giữ xuống dòng giữa các khối (<pre>, <div> từng dòng,
+   <tr>...), còn info.selectionText của menu chuột phải có thể gộp thành một dòng ở một số trang. */
+function readPageSelection() {
+  const sel = window.getSelection();
+  return sel ? sel.toString() : "";
+}
+
+async function loadPageSelection(info, tab, selectionText) {
+  const pageUrl = info.pageUrl || tab?.url || "";
+  if (!tab?.id || isGithubBlobUrl(pageUrl)) return; // GitHub đã có luồng riêng bên dưới
+
+  const target = { tabId: tab.id };
+  if (Number.isInteger(info.frameId) && info.frameId >= 0) {
+    target.frameIds = [info.frameId]; // vùng bôi đen nằm trong iframe nào thì đọc đúng iframe đó
+  }
+
+  let fromPage = "";
+  try {
+    const results = await chrome.scripting.executeScript({ target, func: readPageSelection });
+    fromPage = normalizeSelection(results?.[0]?.result);
+  } catch (err) {
+    console.warn("Không đọc được vùng chọn từ trang, dùng selectionText:", err);
+    return;
+  }
+
+  // Chỉ thay khi bản đọc từ trang thật sự giữ được nhiều dòng hơn; ngược lại giữ kết quả hiện có.
+  if (fromPage.trim() && countLines(fromPage) > countLines(normalizeSelection(selectionText))) {
+    await setPendingSource({ code: fromPage });
+  }
+}
+
 async function loadGithubFile(info, tab, selectionText) {
   const pageUrl = info.pageUrl || tab?.url || "";
   if (!isGithubBlobUrl(pageUrl) || !tab?.id) return;
@@ -59,7 +104,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   const selectionText =
     typeof info.selectionText === "string" ? info.selectionText : "";
 
-  // Hiển thị ngay đoạn đã chọn; nếu là file GitHub, thay bằng nội dung file đầy đủ.
-  void setPendingSource({ code: selectionText });
+  // Hiển thị ngay đoạn đã chọn (đã chuẩn hóa NBSP/xuống dòng).
+  // Trang thường: đọc lại vùng chọn trực tiếp từ trang để không mất xuống dòng.
+  // File GitHub: thay bằng nội dung file đầy đủ.
+  void setPendingSource({ code: normalizeSelection(selectionText) });
+  void loadPageSelection(info, tab, selectionText);
   void loadGithubFile(info, tab, selectionText);
 });

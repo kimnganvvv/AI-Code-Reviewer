@@ -6,7 +6,7 @@
   <title>AI Code Reviewer — Hybrid SAST + LLM</title>
   <link rel="icon" type="image/x-icon" href="favicon.ico" />
   <link rel="stylesheet" href="static/vendor/codemirror.min.css" />
-  <link rel="stylesheet" href="static/css/app.css?v=6" />
+  <link rel="stylesheet" href="static/css/app.css?v=7" />
 </head>
 <body>
 
@@ -59,8 +59,10 @@
     <div class="control">
       <div class="select-wrap">
         <select id="fMode" title="Chế độ review" aria-label="Chế độ review">
-          <option value="hybrid">Hybrid · Bandit + LLM</option>
-          <option value="bandit">Chỉ Bandit (SAST)</option>
+          <option value="hybrid">Hybrid · Đủ 3 tầng</option>
+          <option value="filter">Công cụ + LLM lọc</option>
+          <option value="tools">Chỉ công cụ tĩnh</option>
+          <option value="bandit">Chỉ Bandit</option>
           <option value="llm">Chỉ LLM</option>
         </select>
         <svg class="select-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
@@ -188,6 +190,6 @@
 
 <script src="static/vendor/codemirror.min.js"></script>
 <script src="static/vendor/python.min.js"></script>
-  <script src="static/js/app.js?v=5"></script>
+  <script src="static/js/app.js?v=10"></script>
 </body>
 </html>

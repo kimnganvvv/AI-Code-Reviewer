@@ -2,54 +2,53 @@
 
 ## 1. Tổng quan
 
-AI Code Reviewer implements a **Single-pass Hybrid SAST + LLM** architecture:
+AI Code Reviewer dùng pipeline ba tầng:
 
-- **Bandit (SAST)**: Phát hiện các lỗi bảo mật rõ ràng dựa trên các quy tắc cứng (regex/AST). Chạy offline, không cần API key.
-- **LLM (Large Language Model)**: Thẩm định và bổ sung. Trong **1 lượt gọi** duy nhất, LLM vừa thẩm định lại cảnh báo từ Bandit (lọc false positive), vừa phát hiện lỗi mà Bandit bỏ sót (bugs, quality issues).
-- **Pipeline**: Xử lý luồng dữ liệu từ đầu vào đến đầu ra: chuẩn hóa, validation dòng, gộp trùng, sắp xếp, và trả về JSON hợp đồng thống nhất.
+1. **Công cụ tĩnh**: Bandit tìm vấn đề bảo mật; Ruff tìm bug/quality; bộ AST tự viết bắt độ lồng sâu và hàm trùng cấu trúc.
+2. **LLM lọc ứng viên**: một lời gọi theo lô để giữ/bỏ ứng viên công cụ và đề xuất sửa.
+3. **LLM tìm lỗi còn thiếu**: tìm một số lỗi thuộc nhóm công cụ chưa bao phủ; bằng chứng và dòng được kiểm tra lại bằng code.
 
-**Ưu điểm chính**: Giảm ~50% chi phí token và độ trễ so với cách gọi LLM 2 lượt.
+`hybrid` chạy cả ba tầng. Các mode `bandit`, `tools`, `llm`, `filter` cho phép chạy từng phần để so sánh. Tầng 2 và tầng 3 là hai lời gọi riêng; mỗi tầng có thể retry theo cấu hình.
 
 ## 2. Luồng xử lý
 
 ```text
-1. Đầu vào      -> POST /review { code, filename, mode }
-                   mode = bandit | llm | hybrid (mặc định hybrid)
-2. Kiểm tra     -> giới hạn độ dài, code không trống
-3. Bandit SAST  -> chạy khi mode = bandit | hybrid
-                   (file tạm, parse JSON, map test_id -> CWE)
-4. LLM 1 lượt   -> chạy khi mode = llm | hybrid
-                   (nhúng bandit_findings + code, thẩm định + bổ sung)
-5. Chuẩn hóa    -> sanitize_llm_issues (ép kiểu, lọc trường lạ)
-6. Line Valid.  -> loại issue có line ngoài phạm vi file thực tế
-7. Merge/Dedup  -> gộp Bandit+LLM -> source="both" nếu cùng lỗi
-8. Sắp xếp      -> theo số dòng, sau đó theo severity
-9. Trả về       -> { issues: [...10 trường...], meta: {mode, ...} }
+POST /review { code, filename, mode }
+  -> kiểm tra code rỗng và giới hạn độ dài
+  -> mode=bandit: Bandit
+     mode=tools/filter/hybrid: Bandit + Ruff + bộ phát hiện AST
+  -> mode=filter/hybrid: khử trùng, xếp ưu tiên, gửi ứng viên cho LLM lọc
+  -> mode=hybrid: LLM tìm lỗi ngoài phạm vi công cụ
+  -> kiểm tra dòng, bằng chứng, suggestion và trùng lặp
+  -> { issues: [...], meta: {...} }
 ```
 
-### 3 chế độ đo (`mode` trong body hoặc query `?mode=...`)
+### Các chế độ (`mode` trong body hoặc query `?mode=...`)
 
-| `mode` | Bandit | LLM | Mục đích |
-|---|---|---|---|
-| `bandit` | ✅ | ❌ | Baseline SAST, không tốn token, không cần API key |
-| `llm` | ❌ | ✅ | Đo khả năng thuần LLM trong việc tìm bug/quality |
-| `hybrid` | ✅ | ✅ | Chế độ sản phẩm: thẩm định false positive Bandit |
+| `mode` | Hành vi |
+|---|---|
+| `bandit` | Chỉ Bandit; baseline SAST |
+| `tools` | Bandit + Ruff + static, không gọi LLM |
+| `llm` | LLM phân tích độc lập, không chạy công cụ |
+| `filter` | Công cụ tĩnh + LLM lọc ứng viên |
+| `hybrid` | Công cụ tĩnh + LLM lọc + LLM tìm lỗi còn thiếu |
 
-**Quan trọng**: `meta.mode` luôn echo lại chính xác chế độ đã yêu cầu, giúp script đo tách kết quả đúng. Nếu LLM chưa cấu hình:
-- `hybrid`: Vẫn trả kết quả Bandit + `meta.llm_error` ghi lý do fallback.
-- `llm`: Trả `issues=[]` + `meta.llm_error`.
+Nếu LLM chưa cấu hình, `llm` trả danh sách rỗng kèm `meta.llm_error`; `filter` và `hybrid` giữ ứng viên công cụ theo chính sách fallback. `tools` và `bandit` không cần LLM.
 
 ## 3. Phân chia module (`backend/app/`)
 
 | File | Trách nhiệm | Ghi chú |
 |---|---|---|
 | `main.py` | HTTP layer | Routes, CORS, phục vụ Web UI (`/` → `index.html`, `/sample`, `/health), xử lý lỗi HTTP. Bật CORS `allow_origins=["*"]` để Chrome Extension gọi cross-origin. |
-| `schemas.py` | Hợp đồng | Pydantic models với `Literal` chặt chẽ cho `type` (security/bug/quality), `severity` (high/medium/low), `confidence` (high/medium/low), `source` (bandit/llm/both). **Chỉ sửa tại đây khi thay đổi hợp đồng API** — cần thông báo cho toàn nhóm trước. Dùng `Literal` vì nếu gửi `type: "critical"` thì Pydantic tự báo lỗi thay vì âm thầm lọt vào hệ thống. |
-| `config.py` | Cấu hình | Đọc `.env` qua `load_dotenv()`. Phát hiện LLM local: nếu có `LLM_API_KEY` → cloud (OpenAI, OpenRouter, v.v.); nếu không key nhưng `LLM_BASE_URL` trỏ về `localhost` → dùng Ollama/LM Studio miễn phí. Hàm `llm_is_configured()` xử lý 2 trường hợp này. |
-| `bandit_runner.py` | SAST | Chạy `bandit -f json` qua subprocess với cờ `--confidence-level all` (lấy cả cảnh báo yếu vì LLM sẽ thẩm định). Ánh xạ `test_id` → `CWE` qua `BANDIT_CWE_MAP`. Cung cấp `BANDIT_FIXES` để Web UI hiện suggestions ngay cả khi LLM chưa chạy. **Vì sao CLI chứ không dùng Python API?** Dễ debug (chạy `bandit -f json` trực tiếp trong terminal) và tách bạch phiên bản. |
-| `llm_client.py` | LLM client | Gọi OpenAI-compatible endpoint (`/chat/completions`). Hàm `extract_json_array()` bóc JSON từ output LLM: xóa code fence, cắt từ `[` đầu đến `]` cuối, thử parse; nếu lỗi → xoá dấu phẩy thừa rồi parse lại. **Luật cấm**: LLM có thể trả rác → mọi output đều đi qua `try/except` → lỗi đưa vào `meta.llm_error`, hệ thống vẫn trả kết quả Bandit (không crash). |
-| `prompts.py` | Prompt | **Thuộc Người 3**. Backend chỉ chạm 2 điểm móc: `from . import prompts` và `llm_review(code, bandit_issues, prompts.SYSTEM_PROMPT, prompts.build_review_prompt)`. Ranh giới trách nhiệm rõ: Người 3 sửa `prompts.py`, Người 1 sửa code liên quan. Bản baseline có: Grounding Constraint, chống Prompt Injection (thẻ `<user_code>`), CWE Micro-Rubrics, ràng buộc "trả về 1 mảng JSON, không lời mở đầu, không markdown". |
-| `pipeline.py` | Điều phối (tim/core) | Ba bài toán cốt lõi: (a) **Line Validation** — chống ảo giác số dòng (LLM có 31.8% lỗi fact về dòng). (b) **Merge/Dedup** — gộp Bandit+LLM tránh hiện 2 thẻ trùng lẻ. (c) `sanitize_llm_issues()` — ép LLM về hợp đồng (type lạ → quality, severity lạ → medium, line không parse → 0). Hàm `review_code()` orchestrating toàn bộ luồng từ đầu vào đến trả về JSON. |
+| `schemas.py` | Hợp đồng | Pydantic models cho 5 mode review và nguồn Bandit/Ruff/static/LLM. |
+| `config.py` | Cấu hình | Đọc `.env`, giới hạn và cấu hình cho công cụ tĩnh, LLM lọc và LLM tìm lỗi thiếu. |
+| `bandit_runner.py`, `ruff_runner.py` | Công cụ tĩnh | Chạy Bandit/Ruff trong thư mục tạm, chuẩn hóa findings. |
+| `static_detectors.py` | Công cụ tĩnh | Dùng AST phát hiện nesting sâu và hàm trùng cấu trúc. |
+| `candidates.py` | Ứng viên | Chuẩn hóa, khử trùng, xếp ưu tiên và áp phán quyết tầng lọc. |
+| `layered_prompts.py` | Prompt 3 tầng | Tạo prompt và parser có kiểm tra cho tầng lọc/tìm lỗi thiếu. |
+| `prompts.py` | Prompt tương thích | Prompt/parser cũ dùng cho mode `llm` và helper chia sẻ. |
+| `llm_client.py` | LLM client | Gọi endpoint OpenAI-compatible, retry JSON/rate limit, cung cấp entry point cho từng tầng. |
+| `pipeline.py` | Điều phối | Chạy các mode, fallback khi LLM lỗi, kiểm tra dòng cuối và sắp xếp findings. |
 | `mock_data.py` | Mock + mẫu | `POST /mock/review` trả dữ liệu giả đồng nhất format thật. **Quan trọng nhất về teamwork**: Giúp Người 2 làm Extension ngay tuần 1 (không cần API key) và Người 3 tinh chỉnh prompt mà không cần chạy hết pipeline. "Làm mất khoảng 1 buổi, cứu cả nhóm." |
 
 ## 4. Web UI

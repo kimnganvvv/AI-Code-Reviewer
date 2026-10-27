@@ -33,7 +33,7 @@ export async function reviewCode(code, { mode = "hybrid", signal } = {}) {
   const timeoutId = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, 120000);
+  }, 200000);
 
   try {
     if (USE_MOCK) {

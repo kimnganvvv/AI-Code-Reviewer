@@ -67,6 +67,23 @@ def test_health():
     assert "max_code_length" in body
 
 
+def test_web_and_static_assets_are_served():
+    page = client.get("/")
+    assert page.status_code == 200
+    assert 'id="fMode"' in page.text
+    assert "static/js/app.js?v=10" in page.text
+
+    for path in (
+        "/static/css/app.css",
+        "/static/js/app.js",
+        "/static/vendor/codemirror.min.js",
+        "/static/vendor/python.min.js",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.content
+
+
 def test_sample():
     r = client.get("/sample")
     assert r.status_code == 200

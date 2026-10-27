@@ -138,6 +138,8 @@ def test_source_code_and_suggestion_format_are_preserved(page_url):
         page.wait_for_load_state("networkidle")
 
         code_input = page.locator("#code-input")
+        assert code_input.input_value() == source_code
+        assert code_input.evaluate("element => element.scrollTop") == 0
         code_input.fill(source_code)
         textarea_value = code_input.input_value()
 

@@ -1,9 +1,9 @@
 const TYPES = ["security", "bug", "quality"];
 const LEVELS = ["high", "medium", "low"];
-const SOURCES = ["bandit", "llm", "both"];
+const SOURCES = ["bandit", "ruff", "static", "llm", "both"];
 
 const TYPE_LABEL = { security: "Security", bug: "Bug", quality: "Quality" };
-const SOURCE_LABEL = { bandit: "Bandit", llm: "LLM", both: "Bandit + LLM" };
+const SOURCE_LABEL = { bandit: "Bandit", ruff: "Ruff", static: "Static", llm: "LLM", both: "Tool + LLM" };
 const SEVERITY_LABEL = { high: "Cao", medium: "Trung bình", low: "Thấp" };
 const CONFIDENCE_LABEL = { high: "Tin cậy cao", medium: "Tin cậy vừa", low: "Tin cậy thấp" };
 const LEVEL_ORDER = { high: 3, medium: 2, low: 1 };
@@ -89,6 +89,11 @@ function confidence(level) {
   return node;
 }
 
+function isCodePatch(value) {
+  const first = String(value || "").split(/\r?\n/, 1)[0].trim();
+  return /^(?:(?:async\s+)?(?:def|class)\b|(?:async\s+)?for\s+.+\s+in\s+.+:|(?:if|elif|while|with)\s+.+:|(?:try|else|finally)\s*:|(?:except\b|return\b|yield\b|raise\b|pass\b|break\b|continue\b|import\b|from\b)|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\[[^\]\n]+\])*\s*(?:=|[-+*/%]=)\s*|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\s*\()/.test(first);
+}
+
 export function renderEmptyState(
   container,
   {
@@ -139,15 +144,18 @@ function createCard(issue, index) {
     confidence(confidenceLevel)
   );
 
-  const meta = el("div", "issue-card-meta", `Dòng ${issue.line ?? "?"} · ${SOURCE_LABEL[source]}`);
+  const endLine = Number(issue.end_line) || Number(issue.line);
+  const lineLabel = endLine > Number(issue.line) ? `${issue.line}–${endLine}` : issue.line ?? "?";
+  const meta = el("div", "issue-card-meta", `Dòng ${lineLabel} · ${SOURCE_LABEL[source]}`);
 
   const details = el("div", "issue-card-details", null);
   if (issue.cwe_id) details.append(el("span", "cwe", issue.cwe_id));
   details.append(el("p", "explanation", issue.explanation || "Không có giải thích."));
 
   if (issue.suggestion) {
+    const codePatch = isCodePatch(issue.suggestion);
     const sugHead = el("div", "sug-head", null);
-    sugHead.append(el("span", "sug-label", "Đề xuất sửa"));
+    sugHead.append(el("span", "sug-label", codePatch ? "Mã thay thế" : "Hướng khắc phục"));
     const copyBtn = el("button", "copy-btn", "Sao chép");
     copyBtn.type = "button";
     copyBtn.addEventListener("click", async (event) => {
@@ -163,7 +171,12 @@ function createCard(issue, index) {
       }, 1500);
     });
     sugHead.append(copyBtn);
-    details.append(sugHead, el("pre", "code-block suggestion", issue.suggestion));
+    details.append(
+      sugHead,
+      codePatch
+        ? el("pre", "code-block suggestion", issue.suggestion)
+        : el("p", "suggestion", issue.suggestion)
+    );
   }
 
   const setOpen = (open) => {

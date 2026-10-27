@@ -21,7 +21,9 @@ class ReviewClient(Protocol):
 
 
 class HttpReviewClient:
-    def __init__(self, base_url: str = "http://localhost:8000", timeout: float = 180):
+    # Hybrid may make two sequential LLM calls, each with backend retries.
+    # Keep this comfortably above the configured Ollama end-to-end budget.
+    def __init__(self, base_url: str = "http://localhost:8000", timeout: float = 1300):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 

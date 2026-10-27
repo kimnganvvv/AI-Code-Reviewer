@@ -10,9 +10,9 @@
   /* Tự động xác định địa chỉ API backend:
    * 1. Nhận qua query string: index.html?api=http://localhost:8000
    * 2. Nếu mở trực tiếp dạng file:/// -> tự trỏ về http://127.0.0.1:8000
-   * 3. Nếu chạy qua web server (http://localhost:8000) -> dùng relative path ""
+   * 3. Nếu chạy qua web server (localhost, Render, Railway...) -> dùng relative path ""
    */
-  var defaultApi = (window.location && (window.location.protocol === "file:" || !window.location.port))
+  var defaultApi = (window.location && window.location.protocol === "file:")
     ? "http://127.0.0.1:8000"
     : "";
   var API = (new URLSearchParams(window.location.search || "").get("api") || defaultApi).replace(/\/$/, "");
@@ -227,6 +227,11 @@
 
   function setBusy(busy) {
     isBusy = busy;
+    if (cm) cm.setOption("readOnly", busy);
+    if (editorTextarea) editorTextarea.readOnly = busy;
+    if (els.upload) els.upload.disabled = busy;
+    if (els.fileInput) els.fileInput.disabled = busy;
+    if (els.mode) els.mode.disabled = busy;
     syncRunButton();
   }
 
@@ -266,8 +271,10 @@
     if (!cm) return;
     clearIssueLines();
     (list || []).forEach(function (issue) {
-      var idx = Number(issue.line) - 1;
-      if (idx >= 0 && idx < cm.lineCount() && issueLines.indexOf(idx) === -1) {
+      var start = Number(issue.line) - 1;
+      var end = (Number(issue.end_line) || Number(issue.line)) - 1;
+      for (var idx = Math.max(0, start); idx <= Math.min(end, cm.lineCount() - 1); idx++) {
+        if (issueLines.indexOf(idx) !== -1) continue;
         try {
           cm.addLineClass(idx, "background", "cm-line-error");
           issueLines.push(idx);
@@ -310,179 +317,57 @@
     appliedFixes = {};
   }
 
-  /* Tìm dấu ngoặc đóng khớp với ngoặc mở tại vị trí open (bỏ qua nội dung trong chuỗi) */
-  function findCloseParen(s, open) {
-    var depth = 0, quote = null;
-    for (var i = open; i < s.length; i++) {
-      var ch = s.charAt(i);
-      if (quote) {
-        if (ch === "\\") i++;
-        else if (ch === quote) quote = null;
-        continue;
-      }
-      if (ch === '"' || ch === "'") { quote = ch; continue; }
-      if (ch === "(") depth++;
-      else if (ch === ")") { depth--; if (depth === 0) return i; }
-    }
-    return -1;
+  /* Normalize indentation for an exact code replacement from the API. */
+  function codeReplacementFromSuggestion(suggestion, indent) {
+    var raw = String(suggestion || "").replace(/\s+$/, "");
+    if (!raw) return null;
+    var lines = raw.split("\n");
+    var first = lines[0].trim();
+    var looksLikeCode = /^(?:(?:async\s+)?(?:def|class)\b|(?:async\s+)?for\s+.+\s+in\s+.+:|(?:if|elif|while|with)\s+.+:|(?:try|else|finally)\s*:|(?:except\b|return\b|yield\b|raise\b|pass\b|break\b|continue\b|import\b|from\b)|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\[[^\]\n]+\])*\s*(?:=|[-+*/%]=)\s*|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\s*\()/.test(first);
+    if (!looksLikeCode) return null;
+
+    var minIndent = Math.min.apply(null, lines.filter(function (line) { return line.trim(); }).map(function (line) {
+      return (/^\s*/.exec(line) || [""])[0].length;
+    }));
+    var replacement = lines.map(function (line) {
+      return line.trim() ? indent + line.slice(minIndent) : "";
+    }).join("\n");
+    return replacement;
   }
 
-  function missingImports(code, mods) {
-    return mods.filter(function (m) {
-      return !new RegExp("^\\s*(import\\s+[^\\n]*\\b" + m + "\\b|from\\s+" + m + "\\s+import)", "m").test(code);
-    });
-  }
+  /* Use only the backend's exact replacement patch. Never synthesize code from prose. */
+  function proposeFix(issue, original) {
+    var line = Number(issue.line);
+    var endLine = Number(issue.end_line) || line;
+    if (!Number.isInteger(line) || !Number.isInteger(endLine) || line < 1 || endLine < line) return null;
 
-  /* f = open(...) ... f.close()  ->  with open(...) as f:  (thay nhiều dòng một lúc) */
-  function withOpenFix(issue, text, code, indent) {
-    var ctx = [issue.message, issue.explanation, issue.suggestion].join(" ");
-    if (!/\bwith\b|context manager|đóng|close/i.test(ctx)) return null;
-    var m = /^(\s*)([A-Za-z_]\w*)\s*=\s*(open\(.*\))\s*$/.exec(text);
-    if (!m) return null;
-
-    var name = m[2], baseLen = m[1].length;
-    var lines = String(code).split("\n");
-    var start = Number(issue.line) - 1;
-    if (lines[start] !== text) return null;
-
-    var closeRe = new RegExp("^\\s*" + name + "\\.close\\(\\)\\s*(#.*)?$");
-    var useRe = new RegExp("\\b" + name + "\\b");
-    var end = start, closeAt = -1, lastUse = -1;
-    for (var j = start + 1; j < lines.length; j++) {
-      var ln = lines[j];
-      if (!ln.trim()) { end = j; continue; }
-      var ind = (/^\s*/.exec(ln) || [""])[0].length;
-      if (ind < baseLen) break;                       /* ra khỏi khối hiện tại */
-      end = j;
-      if (ind === baseLen && closeRe.test(ln)) { closeAt = j; break; }
-      if (useRe.test(ln)) lastUse = j;
-    }
-
-    var bodyEnd = closeAt !== -1 ? closeAt - 1 : lastUse;
-    if (bodyEnd < start + 1) return null;
-    var body = [];
-    for (var k = start + 1; k <= bodyEnd; k++) {
-      body.push(lines[k].trim() ? "    " + lines[k] : lines[k]);
-    }
-    var out = [m[1] + "with " + m[3] + " as " + name + ":"].concat(body).join("\n");
-    var span = (closeAt !== -1 ? closeAt : bodyEnd) - start + 1;
+    var firstLine = original.split("\n")[0] || "";
+    var indent = (/^\s*/.exec(firstLine) || [""])[0];
+    var replacement = codeReplacementFromSuggestion(issue.suggestion, indent);
+    if (!replacement || replacement === original) return null;
     return {
-      text: out,
-      span: span,
-      note: "Chuyển sang with open(...) như gợi ý: gộp " + span + " dòng" +
-            (closeAt !== -1 ? ", bỏ " + name + ".close() vì with tự đóng file." : ".")
+      text: replacement,
+      note: "Bản vá thay thế đúng phạm vi dòng " + line + "–" + endLine + " do API chỉ định."
     };
   }
 
-  /* Rút bản sửa từ chính câu gợi ý (khi không có quy tắc mẫu và backend không trả code sửa) */
-  function fixFromSuggestion(suggestion, text, indent) {
-    var sug = String(suggestion || "");
-    if (!sug) return null;
-    var ID = "([A-Za-z_][\\w.]*)";
-    var m, to, from;
-
-    /* "Dùng `X` thay vì `Y`" / "use X instead of Y" */
-    m = new RegExp("`?" + ID + "(?:\\(\\))?`?\\s*(?:thay vì|thay cho|instead of|rather than)\\s*`?" + ID, "i").exec(sug);
-    if (m) { to = m[1]; from = m[2]; }
-    /* "Thay `Y` bằng `X`" / "replace Y with X" */
-    if (!m) {
-      m = new RegExp("(?:thay|replace)\\s*`?" + ID + "(?:\\(\\))?`?\\s*(?:bằng|với|with|by)\\s*`?" + ID, "i").exec(sug);
-      if (m) { from = m[1]; to = m[2]; }
-    }
-    if (m && from !== to && text.indexOf(from) !== -1) {
-      var esc = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      var out1 = text.replace(new RegExp("(^|[^\\w.])" + esc + "(?=\\s*\\()"), "$1" + to);
-      if (out1 !== text) return { text: out1, note: "Thay " + from + " bằng " + to + " theo gợi ý — hãy kiểm tra lại." };
-    }
-
-    /* Gợi ý là cả khối code nhiều dòng */
-    var rawLines = sug.replace(/\s+$/, "").split("\n").filter(function (l, i, a) { return l.trim() || i > 0; });
-    while (rawLines.length && !rawLines[0].trim()) rawLines.shift();
-    if (rawLines.length > 1 && /^\s*(with|for|while|if|try|def|class|[\w.]+\s*(=|\())/.test(rawLines[0]) && !/[`]/.test(sug)) {
-      var minInd = Math.min.apply(null, rawLines.filter(function (l) { return l.trim(); }).map(function (l) {
-        return (/^\s*/.exec(l) || [""])[0].length;
-      }));
-      var block = rawLines.map(function (l) { return l.trim() ? indent + l.slice(minInd) : ""; }).join("\n");
-      if (block !== text) return { text: block, note: "Lấy từ khối code trong gợi ý — hãy kiểm tra lại trước khi áp dụng." };
-    }
-
-    /* Gợi ý có 1 đoạn `code` trọn vẹn (có dấu ( hoặc =) -> dùng làm nguyên dòng */
-    var snippets = [];
-    sug.replace(/`([^`\n]+)`/g, function (_, c) { snippets.push(c.trim()); return _; });
-    if (snippets.length === 1 && /[(=]/.test(snippets[0]) && snippets[0] !== text.trim()) {
-      var sn = snippets[0];
-      var pre = /^\s*([\w.]+\s*=(?!=)\s*|return\s+)/.exec(text);
-      if (pre && !/^([\w.]+\s*=(?!=)|return\b)/.test(sn)) sn = pre[1].replace(/^\s*/, "") + sn;
-      return { text: indent + sn, note: "Lấy từ đoạn code trong gợi ý — hãy kiểm tra lại trước khi áp dụng." };
-    }
-    return null;
-  }
-
-  /* Sinh bản sửa cho 1 dòng code. Ưu tiên code sửa do backend trả về (fixed_code / fix / ...),
-   * nếu không có thì dùng quy tắc theo mẫu. Trả về { text, note } hoặc null. */
-  function proposeFix(issue, text, code) {
-    var indent = (/^\s*/.exec(text) || [""])[0];
-    var direct = issue.fixed_code || issue.fixed_line || issue.fix || issue.replacement || issue.suggested_code;
-    if (typeof direct === "string" && direct.trim()) {
-      if (indent && !/^\s/.test(direct)) {
-        direct = direct.split("\n").map(function (l) { return l ? indent + l : l; }).join("\n");
-      }
-      if (direct !== text) return { text: direct, note: "Code sửa do hệ thống review đề xuất." };
-    }
-    if (/^\s*#/.test(text)) return null;
-
-    var wf = withOpenFix(issue, text, code, indent);
-    if (wf) return wf;
-
-    var m, out = null, note = "", mods = [];
-
-    if ((m = /^(\s*)except\s*:(.*)$/.exec(text))) {
-      out = m[1] + "except Exception:" + m[2];
-      note = "Đổi bare except thành except Exception; nên thu hẹp đúng loại ngoại lệ cần bắt.";
-    } else if (/(^|[^\w.])eval\s*\(/.test(text)) {
-      out = text.replace(/(^|[^\w.])eval\s*\(/g, "$1ast.literal_eval(");
-      mods = ["ast"];
-      note = "ast.literal_eval chỉ đánh giá literal (số, chuỗi, list, dict…), không chạy mã tùy ý.";
-    } else if ((m = /os\.system\s*\(/.exec(text))) {
-      var open = m.index + m[0].length - 1;
-      var close = findCloseParen(text, open);
-      var arg = close > open ? text.slice(open + 1, close).trim() : "";
-      if (arg) {
-        out = text.slice(0, m.index) + "subprocess.run(shlex.split(" + arg + "), shell=False, check=True)" + text.slice(close + 1);
-        mods = ["subprocess", "shlex"];
-        note = "subprocess.run với shell=False; hãy chắc chắn tham số không chứa dữ liệu người dùng chưa kiểm tra.";
-      }
-    } else if (/shell\s*=\s*True/.test(text)) {
-      out = text.replace(/shell\s*=\s*True/, "shell=False");
-      note = "Khi shell=False, lệnh phải là list tham số, ví dụ [\"ls\", \"-l\"].";
-    } else if ((m = /^(\s*)([A-Za-z_][\w.]*)(\s*=\s*)(["'])[^"']{3,}\4(.*)$/.exec(text)) && /password|passwd|secret|api_key|token/i.test(m[2])) {
-      var envName = m[2].split(".").pop().toUpperCase();
-      out = m[1] + m[2] + m[3] + 'os.getenv("' + envName + '")' + m[5];
-      mods = ["os"];
-      note = "Đặt giá trị thật vào biến môi trường " + envName + " thay vì ghi cứng trong code.";
-    } else if (/hashlib\.(md5|sha1)\s*\(/.test(text)) {
-      out = text.replace(/hashlib\.(md5|sha1)\s*\(/, "hashlib.sha256(");
-      note = "SHA-256 cho digest dài hơn (64 ký tự hex); nếu băm mật khẩu nên dùng bcrypt/argon2.";
-    }
-
-    if (!out || out === text) {
-      var fromSug = fixFromSuggestion(issue.suggestion, text, indent);
-      if (fromSug) return fromSug;
-      return null;
-    }
-    var miss = missingImports(code, mods);
-    if (miss.length) note += " Cần thêm: import " + miss.join(", ") + " ở đầu file.";
-    return { text: out, note: note };
-  }
-
-  /* Sau khi số dòng đổi, dời số dòng của các lỗi nằm phía dưới để vẫn trỏ đúng chỗ */
-  function shiftIssueLines(exceptIndex, afterLine, delta) {
+  /* Keep issue ranges aligned after a source range has been replaced. */
+  function shiftIssueLines(exceptIndex, startLine, endLine, delta) {
     if (!delta) return;
+    function remap(line) {
+      if (line <= startLine) return line;
+      if (line > endLine) return line + delta;
+      return startLine;
+    }
     allIssues.forEach(function (it, i) {
-      if (i !== exceptIndex && it && Number(it.line) > afterLine) it.line = Number(it.line) + delta;
+      if (i === exceptIndex || !it) return;
+      var oldStart = Number(it.line);
+      var oldEnd = Number(it.end_line) || oldStart;
+      if (!Number.isFinite(oldStart) || !Number.isFinite(oldEnd)) return;
+      it.line = remap(oldStart);
+      it.end_line = Math.max(it.line, remap(oldEnd));
     });
   }
-
   function refreshAfterFix(index) {
     var issuesEl = els.issues || document.getElementById("issues");
     var top = issuesEl ? issuesEl.scrollTop : 0;
@@ -492,47 +377,90 @@
     selectIssue(index, false);
   }
 
-  function applyFix(index, newText, note, onUnchanged, span) {
+  function reconcileAppliedFix(index) {
+    var fx = appliedFixes[index];
+    if (!fx || !cm) return fx || null;
+    var range = fx.marker && fx.marker.find();
+    var issue = allIssues[index];
+    var startLine = range ? range.from.line + 1 : Number(issue && issue.line);
+    if (!Number.isInteger(startLine) || startLine < 1) return fx;
+    var currentEndLine = range ? range.to.line + 1 : (Number(issue && issue.end_line) || startLine);
+    var currentText;
+    if (range) {
+      currentText = cm.getRange(range.from, range.to);
+    } else {
+      var originalLastLine = startLine + fx.originalLineCount - 2;
+      if (originalLastLine >= cm.lineCount()) return fx;
+      currentText = cm.getRange(
+        { line: startLine - 1, ch: 0 },
+        { line: originalLastLine, ch: cm.getLine(originalLastLine).length }
+      );
+    }
+    if (currentText !== fx.original) return fx;
+
+    /* Ctrl+Z or an external editor change already restored the original text. */
+    var currentLineCount = currentEndLine - startLine + 1;
+    if (issue) {
+      issue.line = startLine;
+      issue.end_line = startLine + fx.originalLineCount - 1;
+      shiftIssueLines(index, startLine, currentEndLine, fx.originalLineCount - currentLineCount);
+    }
+    try { fx.marker.clear(); } catch (_) {}
+    delete appliedFixes[index];
+    return null;
+  }
+
+  function applyFix(index, newText, note, onUnchanged) {
     if (!cm) { setMeta("Editor chưa sẵn sàng.", "error"); return; }
     var issue = allIssues[index];
     if (!issue || appliedFixes[index]) return;
 
     var idx = Number(issue.line) - 1;
-    if (idx < 0 || idx >= cm.lineCount()) {
-      setMeta("Dòng " + issue.line + " không tồn tại trong editor.", "error");
+    var startLine = idx + 1;
+    var sourceEndLine = Number(issue.end_line) || startLine;
+    if (!String(newText || "").trim()) {
+      setMeta("Bản vá đang để trống nên chưa thể áp dụng.", "warn");
+      if (onUnchanged) onUnchanged();
       return;
     }
-    var last = Math.min(idx + Math.max(1, Number(span) || 1) - 1, cm.lineCount() - 1);
+    if (idx < 0 || idx >= cm.lineCount() || sourceEndLine < startLine || sourceEndLine > cm.lineCount()) {
+      setMeta("Khoảng dòng của lỗi không còn hợp lệ trong editor.", "error");
+      return;
+    }
+    var last = sourceEndLine - 1;
     var origLineCount = last - idx + 1;
     var from = { line: idx, ch: 0 };
     var to = { line: last, ch: cm.getLine(last).length };
     var original = cm.getRange(from, to);
     if (newText === original) {
-      setMeta("Nội dung chưa thay đổi so với dòng gốc — hãy sửa ô code trước khi áp dụng.", "warn");
+      setMeta("Nội dung chưa thay đổi so với mã gốc.", "warn");
       if (onUnchanged) onUnchanged();
       return;
     }
 
-    /* replaceRange giữ lịch sử undo của CodeMirror nên Ctrl+Z vẫn hoạt động */
     cm.replaceRange(newText, from, to, "+applyFix");
-
     var parts = newText.split("\n");
+    var newEndLine = startLine + parts.length - 1;
     var end = { line: idx + parts.length - 1, ch: parts[parts.length - 1].length };
+    if (cm.getRange(from, end) !== newText) {
+      setMeta("Editor không nhận đủ nội dung bản vá; chưa đánh dấu là đã áp dụng.", "error");
+      return;
+    }
     var marker = cm.markText(from, end, { className: "cm-fix-applied" });
-    appliedFixes[index] = { marker: marker, original: original, applied: newText };
+    appliedFixes[index] = {
+      marker: marker,
+      original: original,
+      applied: newText,
+      originalLineCount: origLineCount
+    };
+    issue.end_line = newEndLine;
 
-    shiftIssueLines(index, idx + 1, parts.length - origLineCount);
+    shiftIssueLines(index, startLine, sourceEndLine, parts.length - origLineCount);
     cm.scrollIntoView({ line: idx, ch: 0 }, 80);
 
-    var hint = /Cần thêm:.*$/.exec(note || "");
-    setMeta(
-      "Đã áp dụng sửa dòng " + (idx + 1) + ". Bấm ↺ Hoàn tác trên thẻ (hoặc Ctrl+Z) để khôi phục." +
-      (hint ? " " + hint[0] : ""),
-      hint ? "warn" : ""
-    );
+    setMeta("Đã áp dụng bản vá trong dòng " + startLine + "–" + newEndLine + ". Có thể hoàn tác bằng nút trên thẻ hoặc Ctrl+Z.", "");
     refreshAfterFix(index);
   }
-
   function undoFix(index) {
     var fx = appliedFixes[index];
     var issue = allIssues[index];
@@ -540,74 +468,73 @@
 
     var range = fx.marker.find();
     if (!range) {
-      setMeta("Không tìm thấy vùng code đã sửa (có thể đã bị xóa). Hãy dùng Ctrl+Z để hoàn tác.", "warn");
+      setMeta("Không tìm thấy vùng mã đã sửa. Hãy dùng Ctrl+Z để hoàn tác.", "warn");
       return;
     }
     if (cm.getRange(range.from, range.to) !== fx.applied) {
-      if (!window.confirm("Đoạn code này đã bị chỉnh tay sau khi áp dụng. Vẫn hoàn tác về dòng gốc (mất các chỉnh sửa đó)?")) return;
+      if (!window.confirm("Đoạn mã đã bị chỉnh tay sau khi áp dụng. Vẫn hoàn tác về mã gốc?")) return;
     }
 
+    var startLine = range.from.line + 1;
+    var currentEndLine = range.to.line + 1;
     var removedLines = range.to.line - range.from.line;
     cm.replaceRange(fx.original, range.from, range.to, "+undoFix");
     try { fx.marker.clear(); } catch (_) {}
     delete appliedFixes[index];
 
-    var startLine = range.from.line + 1;
     issue.line = startLine;
-    shiftIssueLines(index, startLine, (fx.original.split("\n").length - 1) - removedLines);
+    issue.end_line = startLine + fx.originalLineCount - 1;
+    shiftIssueLines(index, startLine, currentEndLine, (fx.original.split("\n").length - 1) - removedLines);
     cm.scrollIntoView({ line: range.from.line, ch: 0 }, 80);
 
-    setMeta("Đã hoàn tác, dòng " + startLine + " trở về nội dung ban đầu.", "");
+    setMeta("Đã hoàn tác bản vá; mã gốc được khôi phục.", "");
     refreshAfterFix(index);
   }
-
-  function buildFixBox(card, issue, index, lineText, applied) {
+  function buildFixBox(card, issue, index, applied, proposal) {
     var lineNum = Number(issue.line);
-    var original = applied ? applied.original : lineText;
-    var proposal = applied ? null : proposeFix(issue, original, getCode());
+    var issueEndLine = Number(issue.end_line) || lineNum;
+    var spanN = Math.max(1, issueEndLine - lineNum + 1);
+    var sourceLines = getCode().split(/\r\n|\r|\n/);
+    var original = applied ? applied.original : sourceLines.slice(lineNum - 1, issueEndLine).join("\n");
+    proposal = applied ? null : proposal;
     var baseValue = proposal ? proposal.text : original;
-    var spanN = applied ? applied.original.split("\n").length : (proposal && proposal.span) || 1;
-    var rangeSuffix = spanN > 1 ? "–" + (lineNum + spanN - 1) : "";
+    var rangeSuffix = spanN > 1 ? "–" + issueEndLine : "";
 
     var wrap = el("div", "fix-wrap");
-    wrap.appendChild(el("div", "fix-label", (applied ? "✔ Đã sửa dòng " : "✏ Sửa dòng ") + lineNum + rangeSuffix + ":"));
-
+    wrap.appendChild(el("div", "fix-label", "Suggestion · mã thay thế cho dòng " + lineNum + rangeSuffix));
     var input = document.createElement("textarea");
     input.className = "fix-input";
     input.value = applied ? applied.applied : baseValue;
-    input.rows = Math.min(Math.max(input.value.split("\n").length + 1, 2), 6);
+    /* Show the complete API patch without clipping long replacements to a fixed row count. */
+    input.rows = Math.max(input.value.split("\n").length + 1, 2);
     input.spellcheck = false;
     input.disabled = !!applied;
-    input.setAttribute("aria-label", "Code thay thế cho dòng " + lineNum);
+    input.setAttribute("aria-label", "Mã thay thế cho dòng " + lineNum + rangeSuffix);
     wrap.appendChild(input);
 
     if (proposal && proposal.note) {
-      wrap.appendChild(el("div", "fix-note", "💡 " + proposal.note));
-    } else if (!applied && !proposal) {
-      wrap.appendChild(el("div", "fix-note", "Chưa có đề xuất tự động cho lỗi này — hãy sửa tay ở ô trên rồi bấm Áp dụng."));
+      wrap.appendChild(el("div", "fix-note", proposal.note));
+    } else if (!applied) {
+      wrap.appendChild(el("div", "fix-note fix-warn", "Không có bản vá dạng mã hợp lệ. Xem phần giải thích; không thể áp dụng lời khuyên dạng văn bản."));
     }
 
     var row = el("div", "fix-row");
-
-    var applyBtn = el("button", "btn-apply", applied ? "✔ Đã áp dụng" : "✔ Áp dụng");
+    var applyBtn = el("button", "btn-apply", applied ? "✓ Đã áp dụng" : "✓ Áp dụng");
     applyBtn.type = "button";
     applyBtn.disabled = !!applied;
-    applyBtn.title = "Thay dòng " + lineNum + " trong editor bằng nội dung ở ô trên";
+    applyBtn.title = "Thay dòng " + lineNum + rangeSuffix + " bằng nội dung trong ô mã";
     applyBtn.addEventListener("click", function (e) {
       e.stopPropagation();
       e.preventDefault();
       applyFix(index, input.value, proposal ? proposal.note : "", function () {
-        var w = wrap.querySelector(".fix-warn");
-        if (!w) { w = el("div", "fix-note fix-warn"); wrap.insertBefore(w, row); }
-        w.textContent = "⚠ Ô code đang giống hệt dòng gốc nên chưa có gì để áp dụng. Hãy sửa nội dung trong ô này rồi bấm lại.";
         input.focus();
-      }, proposal ? proposal.span : 1);
+      });
     });
     row.appendChild(applyBtn);
 
-    var undoBtn = el("button", "btn-reset-fix", applied ? "↺ Hoàn tác" : "↺ Đặt lại");
+    var undoBtn = el("button", "btn-reset-fix", applied ? "↶ Hoàn tác" : "Đặt lại");
     undoBtn.type = "button";
-    undoBtn.title = applied ? "Khôi phục dòng gốc trong editor" : "Đưa ô sửa về nội dung đề xuất ban đầu";
+    undoBtn.title = applied ? "Khôi phục mã gốc trong editor" : "Đưa ô mã về bản vá ban đầu";
     undoBtn.addEventListener("click", function (e) {
       e.stopPropagation();
       e.preventDefault();
@@ -619,7 +546,6 @@
     wrap.appendChild(row);
     card.appendChild(wrap);
   }
-
   /* -------------------------------------------------------------- render */
 
   function emptyState(title, sub) {
@@ -684,17 +610,20 @@
 
     list.forEach(function (issue) {
       var index = allIssues.indexOf(issue);
+      var appliedState = reconcileAppliedFix(index);
 
       var card = el("div", "issue " + (issue.type || "quality"));
       card.dataset.index = String(index);
-      if (appliedFixes[index]) card.classList.add("applied");
+      if (appliedState) card.classList.add("applied");
       card.tabIndex = 0;
       card.setAttribute("role", "button");
       card.setAttribute("aria-label",
         "Lỗi dòng " + issue.line + ": " + (issue.message || issue.type));
 
       var head = el("div", "issue-head");
-      head.appendChild(el("span", "line", "Dòng " + (issue.line || "?")));
+      var issueEnd = Number(issue.end_line) || Number(issue.line);
+      var issueRangeLabel = issueEnd > Number(issue.line) ? issue.line + "–" + issueEnd : (issue.line || "?");
+      head.appendChild(el("span", "line", "Dòng " + issueRangeLabel));
       head.appendChild(el("span", "tag " + (issue.type || "quality"), issue.type || "info"));
       head.appendChild(el("span", "chip sev-" + (issue.severity || "low"), "mức " + (issue.severity || "low")));
       if (issue.confidence) {
@@ -709,19 +638,45 @@
       card.appendChild(head);
 
       card.appendChild(el("div", "msg", issue.message || "(không có mô tả)"));
-      if (issue.explanation) card.appendChild(el("div", "explanation", issue.explanation));
-      if (issue.suggestion) card.appendChild(el("div", "suggestion", issue.suggestion));
 
-      /* Chỉ hiện ô sửa khi issue có suggestion VÀ dòng lỗi hợp lệ trong editor */
-      var fixLineIdx = Number(issue.line) - 1;
-      var hasValidLine = issue.suggestion && cm && fixLineIdx >= 0 && fixLineIdx < cm.lineCount();
-      if (hasValidLine) {
-        var currentLineText = cm.getLine(fixLineIdx) || "";
-        if (currentLineText.trim() || appliedFixes[index]) {
-          buildFixBox(card, issue, index, currentLineText, appliedFixes[index]);
-        }
+      var lineNum = Number(issue.line);
+      var endLine = Number(issue.end_line) || lineNum;
+      var rangeValid = cm && Number.isInteger(lineNum) && Number.isInteger(endLine) &&
+        lineNum >= 1 && endLine >= lineNum && endLine <= cm.lineCount();
+      var originalRange = rangeValid
+        ? cm.getRange({ line: lineNum - 1, ch: 0 }, { line: endLine - 1, ch: cm.getLine(endLine - 1).length })
+        : "";
+      var isApplied = !!appliedState;
+      var shownOriginal = isApplied ? appliedState.original : originalRange;
+      var replacement = rangeValid && !isApplied ? codeReplacementFromSuggestion(issue.suggestion, (/^\s*/.exec(originalRange.split("\n")[0] || "") || [""])[0]) : null;
+      var proposal = rangeValid && !isApplied ? proposeFix(issue, originalRange) : null;
+
+      if (rangeValid) {
+        var sourceRangeLabel = endLine > lineNum ? lineNum + "–" + endLine : String(lineNum);
+        card.appendChild(el("div", "issue-code-label", "Code đang bị lỗi · dòng " + sourceRangeLabel));
+        card.appendChild(el("pre", "issue-source-code", shownOriginal));
+      }
+      if (issue.explanation) card.appendChild(el("div", "explanation", issue.explanation));
+
+      if (isApplied) {
+        card.appendChild(el("div", "fix-note", "Bản vá đã được áp dụng trong editor."));
+      } else if (proposal) {
+        /* Bản vá được hiển thị một lần trong ô chỉnh sửa bên dưới. */
+      } else if (issue.suggestion && !replacement) {
+        card.appendChild(el("div", "suggestion", "Hướng khắc phục: " + issue.suggestion));
+      } else if (!issue.suggestion) {
+        var noPatchReason = issue.cwe_id === "CWE-369"
+          ? "Chưa có bản vá tự động: cần xác định kết quả mong muốn khi đầu vào rỗng trước khi chọn giá trị thay thế cho mẫu số."
+          : "Chưa có suggestion dạng bản vá an toàn để áp dụng. Hãy xem giải thích phía trên.";
+        card.appendChild(el("div", "fix-note", noPatchReason));
+      } else {
+        card.appendChild(el("div", "fix-note fix-warn", "Bản vá không thay đổi mã hiện tại nên không thể áp dụng."));
       }
 
+      /* Only an exact code patch (or an already applied patch) gets an apply box. */
+      if ((proposal || appliedState) && rangeValid) {
+        buildFixBox(card, issue, index, appliedState, proposal);
+      }
       /* Listener click phải ở CUỐI và kiểm tra target để tránh kích hoạt khi bấm fix-input/applyBtn */
       function activate() { selectIssue(index, true); }
       card.addEventListener("click", function (e) {
@@ -750,9 +705,12 @@
     var issue = allIssues[index];
     var idx = Number(issue.line) - 1;
 
+    var endIdx = (Number(issue.end_line) || Number(issue.line)) - 1;
     if (cm && idx >= 0 && idx < cm.lineCount()) {
-      cm.addLineClass(idx, "background", "cm-highlight-line");
-      activeLines.push(idx);
+      for (var lineIdx = idx; lineIdx <= Math.min(endIdx, cm.lineCount() - 1); lineIdx++) {
+        cm.addLineClass(lineIdx, "background", "cm-highlight-line");
+        activeLines.push(lineIdx);
+      }
 
       if (scrollToLine) {
         var pos = { line: idx, ch: 0 };
@@ -784,7 +742,9 @@
       var line = cm.getCursor().line + 1;
       var visible = filteredIssues();
       for (var i = 0; i < visible.length; i++) {
-        if (visible[i].line === line) {
+        var issueStart = Number(visible[i].line);
+        var issueEnd = Number(visible[i].end_line) || issueStart;
+        if (line >= issueStart && line <= issueEnd) {
           var index = allIssues.indexOf(visible[i]);
           selectIssue(index, false);
           var card = document.querySelector('.issue[data-index="' + index + '"]');
@@ -1481,7 +1441,7 @@
     currentFilename = (typeof entry.filename === "string" && entry.filename) ? entry.filename : "snippet.py";
     setFileLabel(currentFilename);
     var modeEl = document.getElementById("fMode");
-    if (modeEl && entry.meta && ["bandit", "llm", "hybrid"].indexOf(entry.meta.mode) !== -1) {
+    if (modeEl && entry.meta && ["bandit", "tools", "llm", "filter", "hybrid"].indexOf(entry.meta.mode) !== -1) {
       modeEl.value = entry.meta.mode;
     }
     clearAppliedFixes();

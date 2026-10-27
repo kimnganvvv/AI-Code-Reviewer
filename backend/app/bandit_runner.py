@@ -35,7 +35,19 @@ BANDIT_CWE_MAP = {
     "B404": ("CWE-78", "security"),   # import subprocess
     "B110": ("CWE-703", "quality"),   # try/except/pass
     "B101": ("CWE-703", "quality"),   # assert_used
+    "B112": ("CWE-703", "quality"),   # try/except/continue
+    "B308": ("CWE-79", "security"),   # mark_safe
+    "B703": ("CWE-79", "security"),   # django mark_safe
+    "B614": ("CWE-502", "security"),  # torch.load
+    "B506": ("CWE-502", "security"),  # yaml.load
+    "B605": ("CWE-78", "security"),   # os.system
+    "B603": ("CWE-78", "security"),   # subprocess không shell
+    "B311": ("CWE-330", "security"),  # random cho mục đích bảo mật
+    "B107": ("CWE-798", "security"),  # mật khẩu mặc định trong tham số
 }
+
+# Rule Bandit chưa ánh xạ mặc định là security (Bandit là công cụ bảo mật); chỉ các rule dưới đây là quality.
+_QUALITY_RULES = {"B101", "B110", "B112"}
 
 # Gợi ý sửa nhanh hiển thị ngay trên Web UI (dù LLM chưa chạy)
 BANDIT_FIXES = {
@@ -121,7 +133,7 @@ def run_bandit(code: str) -> List[dict]:
     out: List[dict] = []
     for res in data.get("results", []):
         tid = res.get("test_id", "")
-        cwe, typ = BANDIT_CWE_MAP.get(tid, (None, "quality"))
+        cwe, typ = BANDIT_CWE_MAP.get(tid, (None, "quality" if tid in _QUALITY_RULES else "security"))
         out.append({
             "line": int(res.get("line_number") or 1),
             "type": typ,

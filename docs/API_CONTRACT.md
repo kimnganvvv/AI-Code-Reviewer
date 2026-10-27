@@ -17,7 +17,7 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
 |---|---|---|---|
 | `code` | `string` | có | Mã nguồn Python cần review |
 | `filename` | `string` | không | Chỉ dùng hiển thị (mặc định `snippet.py`) |
-| `mode` | `string` | không | `bandit` \| `llm` \| `hybrid` (mặc định `hybrid`) |
+| `mode` | `string` | không | `bandit` \| `tools` \| `llm` \| `filter` \| `hybrid` (mặc định `hybrid`) |
 
 `mode` cũng nhận qua query: `POST /review?mode=bandit`. Nếu có cả hai, **query thắng body**.
 
@@ -51,25 +51,32 @@ Tất cả thành viên dùng **cùng 1 hợp đồng**. Thay đổi chỉ đư�
 }
 ```
 
-`meta.mode` phản ánh chế độ đã chạy: `bandit`, `llm`, `hybrid`, hoặc `mock`.
-- `mode=bandit`: chỉ chạy Bandit, `llm_count = 0`, `llm_error = null`.
-- `mode=llm`: chỉ chạy LLM, `bandit_count = 0`; nếu LLM chưa cấu hình thì `issues = []` và `llm_error` có thông báo.
-- `mode=hybrid`: chạy cả hai; nếu LLM lỗi/chưa cấu hình thì vẫn trả kết quả Bandit kèm `llm_error`.
+`meta.mode` phản ánh chế độ đã chạy: `bandit`, `tools`, `llm`, `filter`, `hybrid`, hoặc `mock`.
+- `mode=bandit`: chỉ chạy Bandit.
+- `mode=tools`: chạy Bandit, Ruff và bộ phát hiện AST tự viết.
+- `mode=llm`: chỉ chạy LLM độc lập; nếu LLM chưa cấu hình thì trả `issues = []` và ghi lý do trong `llm_error`.
+- `mode=filter`: chạy công cụ tĩnh rồi dùng LLM thẩm định ứng viên.
+- `mode=hybrid`: chạy công cụ tĩnh, LLM lọc ứng viên, rồi LLM tìm thêm một số lỗi ngoài phạm vi công cụ. Nếu LLM lỗi, trả các ứng viên công cụ theo chính sách fallback kèm `llm_error`.
 
 Các khóa của `meta` (theo `ReviewMeta`):
 
 | Trường | Kiểu | Mặc định | Mô tả |
 |---|---|---|---|
-| `mode` | `string` | — | `bandit` \| `llm` \| `hybrid` \| `mock` |
-| `bandit_count` | `int` | `0` | Số cảnh báo Bandit ban đầu, trước phán quyết của LLM |
-| `llm_count` | `int` | `0` | Số `new_issue` mới do LLM trả về (không tính `bandit_verdicts`) |
+| `mode` | `string` | — | `bandit` \| `tools` \| `llm` \| `filter` \| `hybrid` \| `mock` |
+| `bandit_count` | `int` | `0` | Số ứng viên Bandit trước lọc |
+| `ruff_count` | `int` | `0` | Số ứng viên Ruff |
+| `static_count` | `int` | `0` | Số ứng viên từ bộ phát hiện AST tự viết |
+| `candidate_count` | `int` | `0` | Số ứng viên sau khử trùng giữa các công cụ |
+| `truncated_candidates` | `int` | `0` | Số ứng viên vượt giới hạn gửi lên LLM |
+| `llm_count` | `int` | `0` | Số issue LLM tìm bổ sung ở tầng 3 hoặc mode `llm` |
 | `dropped_invalid_lines` | `int` | `0` | Số issue bị loại bởi Line Validation/guardrail parse (dòng hoặc evidence không hợp lệ, trùng, vượt giới hạn...) |
 | `merged_count` | `int` | `0` | Số lần gộp issue trùng |
 | `llm_error` | `string` \| `null` | `null` | Lỗi/cấu hình LLM nếu có |
 | `suppressed_count` | `int` | `0` | Số cảnh báo Bandit bị LLM loại là báo động giả |
 | `rejected_suggestions` | `int` | `0` | Số bản vá bị loại do hỏng cú pháp hoặc no-op |
+| `tool_warnings` | `string[]` | `[]` | Cảnh báo khi Ruff thiếu hoặc công cụ không phân tích được code |
 
-## 2. Cấu trúc `Issue` (10 trường; `end_line` tuỳ chọn)
+## 2. Cấu trúc `Issue` (các trường mở rộng đều tuỳ chọn)
 
 | Trường | Kiểu | Giá trị | Mô tả |
 |---|---|---|---|
@@ -81,8 +88,9 @@ Các khóa của `meta` (theo `ReviewMeta`):
 | `message` | `string` | — | Tiêu đề ngắn gọn |
 | `explanation` | `string` | — | Nguyên nhân + luồng dữ liệu nguồn->đích |
 | `suggestion` | `string` | — | Mã đề xuất sửa |
-| `source` | `string` | `bandit` \| `llm` \| `both` | Nguồn phát hiện. `both` được đặt khi LLM xác nhận cảnh báo Bandit hoặc khi gộp issue; pipeline hiện tại cũng đặt `both` khi gộp cùng nguồn (LLM–LLM, Bandit–Bandit), nên không dùng `both` để suy ra chắc chắn có đủ hai nguồn |
+| `source` | `string` | `bandit` \| `ruff` \| `static` \| `llm` \| `both` | Nguồn phát hiện; `both` là ứng viên công cụ đã được LLM xác nhận |
 | `end_line` | `int` \| `null` (>=1) | — | Dòng cuối mà `suggestion` thay thế (`line..end_line`). Tuỳ chọn; `null`/không có = dòng đơn `line` |
+| `rule_id` | `string` \| `null` | ví dụ `B608`, `F401`, `NEST001`, `division_by_zero` | Mã rule công cụ hoặc category của tầng tìm lỗi thiếu |
 
 ## 3. Các endpoint khác
 

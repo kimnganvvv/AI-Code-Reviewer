@@ -1,8 +1,12 @@
-"""Client gọi LLM theo chuẩn OpenAI-compatible (1 lượt review duy nhất).
+"""Client gọi LLM theo chuẩn OpenAI-compatible.
 
-Đồng bộ với prompts.py (contract `bandit_verdicts` + `new_issues`):
-- llm_review() trả về dict đã validate bởi prompts.parse_and_validate_llm_json().
-- Tự retry khi JSON hỏng (parse_error) thay vì coi là "code sạch".
+Các điểm vào theo kiến trúc 3 tầng (prompt/parser nằm ở layered_prompts.py):
+- llm_filter(code, candidates)  -> Tầng 2: phán quyết keep/drop cho từng ứng viên của công cụ (1 lời gọi, theo lô).
+- llm_find_gaps(code)           -> Tầng 3: tìm tối đa vài lỗi thuộc 4 loại công cụ không phủ.
+- llm_review(...)               -> 1 lượt tự do cũ (prompts.py), chỉ còn dùng cho mode=llm làm mốc so sánh.
+- llm_verify_patch(...)         -> re-verification bản vá bằng unit test.
+
+Mọi điểm vào đều tự retry khi JSON hỏng (parse_error) thay vì coi là "code sạch".
 - Tuỳ chọn structured output (REVIEW_JSON_SCHEMA) qua biến môi trường LLM_STRUCTURED_OUTPUT.
 - llm_verify_patch() dùng prompt re-verification; số test/verdict do code quyết định.
 
@@ -18,11 +22,14 @@ from typing import List, Optional
 
 import requests
 
-from . import prompts
-from .config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_TEMPERATURE, LLM_TIMEOUT
+from . import layered_prompts, prompts
+from .config import (
+    FILTER_CONTEXT_LINES, GAP_MAX_ISSUES, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_TEMPERATURE, LLM_TIMEOUT,
+)
 
 log = logging.getLogger("ai-code-reviewer")
-
+# Chỉ gửi khi được đặt (Groq/OpenAI model suy luận: low | medium | high). Để trống với Ollama.
+LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "").strip().lower()
 # off         : không gửi response_format (mặc định, an toàn với mọi provider)
 # json_schema : gửi REVIEW_JSON_SCHEMA (OpenAI, vLLM, Ollama bản mới, một số model OpenRouter/Groq)
 # json_object : chỉ ép trả JSON object (provider chỉ hỗ trợ JSON mode)
@@ -32,6 +39,9 @@ STRUCTURED_MODE = os.getenv("LLM_STRUCTURED_OUTPUT", "off").strip().lower()
 LLM_PARSE_RETRIES = max(0, int(os.getenv("LLM_PARSE_RETRIES", "1")))
 # Trần số token sinh ra (Ollama map sang num_predict). 0 = không giới hạn.
 LLM_MAX_TOKENS = max(0, int(os.getenv("LLM_MAX_TOKENS", "5000")))
+# Trần token riêng cho từng tầng (đầu ra Tầng 3 rất ngắn, Tầng 2 tỉ lệ với số ứng viên).
+FILTER_MAX_TOKENS = max(0, int(os.getenv("FILTER_MAX_TOKENS", "5000")))
+GAP_MAX_TOKENS = max(0, int(os.getenv("GAP_MAX_TOKENS", "1500")))
 # Giới hạn tốc độ (gói miễn phí hay bị 429 vì TPM = token mỗi phút):
 LLM_RATE_LIMIT_RETRIES = max(0, int(os.getenv("LLM_RATE_LIMIT_RETRIES", "4")))  # số lần chờ rồi gọi lại khi 429
 LLM_MAX_WAIT = float(os.getenv("LLM_MAX_WAIT", "75"))        # chờ tối đa mỗi lần (giây)
@@ -120,17 +130,24 @@ def call_llm(
     user_prompt: str,
     response_schema: Optional[dict] = None,
     schema_name: str = "response",
+    *,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
 ) -> str:
+    """`temperature`/`max_tokens` None = dùng mặc định toàn cục; max_tokens=0 = không giới hạn."""
+    token_cap = LLM_MAX_TOKENS if max_tokens is None else max_tokens
     payload = {
         "model": LLM_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": LLM_TEMPERATURE,
+        "temperature": LLM_TEMPERATURE if temperature is None else temperature,
     }
-    if LLM_MAX_TOKENS:
-        payload["max_tokens"] = LLM_MAX_TOKENS
+    if token_cap:
+        payload["max_tokens"] = token_cap
+    if LLM_REASONING_EFFORT:
+        payload["reasoning_effort"] = LLM_REASONING_EFFORT
     rf = _response_format(response_schema, schema_name)
     if rf:
         payload["response_format"] = rf
@@ -157,7 +174,7 @@ def call_llm(
         )
         choice = data["choices"][0]
         if choice.get("finish_reason") == "length":
-            log.warning("LLM bị cắt do đạt max_tokens=%s; JSON có thể thiếu -> tăng LLM_MAX_TOKENS", LLM_MAX_TOKENS)
+            log.warning("LLM bị cắt do đạt max_tokens=%s; JSON có thể thiếu -> tăng trần token", token_cap)
         return choice["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError) as e:
         raise LLMError(f"Phản hồi LLM không đúng định dạng: {e}") from e
@@ -186,31 +203,76 @@ def extract_json_array(text: str) -> List[dict]:
     return []
 
 
+def _call_and_parse(
+    system_prompt: str,
+    user_prompt: str,
+    schema: Optional[dict],
+    schema_name: str,
+    parse,
+    *,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+) -> dict:
+    """Gọi LLM rồi parse; parse_error -> gọi lại tối đa LLM_PARSE_RETRIES lần. `parse(raw)` phải trả dict có khóa
+    'parse_error'. Raise LLMError nếu hết lượt mà vẫn không parse được."""
+    last_raw = ""
+    for attempt in range(1 + LLM_PARSE_RETRIES):
+        last_raw = call_llm(system_prompt, user_prompt, schema, schema_name,
+                            temperature=temperature, max_tokens=max_tokens)
+        result = parse(last_raw)
+        if not result["parse_error"]:
+            return result
+        log.warning("LLM (%s) trả JSON không parse được (lần %s/%s)", schema_name, attempt + 1, 1 + LLM_PARSE_RETRIES)
+    raise LLMError(f"LLM trả JSON không hợp lệ sau {1 + LLM_PARSE_RETRIES} lần thử: {last_raw[:200]!r}")
+
+
+def llm_filter(code: str, candidates: List[dict]) -> dict:
+    """Tầng 2: phán quyết keep/drop cho các ứng viên (đã có candidate_id) trong MỘT lời gọi.
+
+    Trả dict của layered_prompts.parse_filter_json(): {verdicts, parse_error, rejected_suggestions}.
+    Ứng viên thiếu verdict được điền keep=True + auto_default. Raise LLMError khi hết lượt retry.
+    """
+    system_prompt, user_prompt = layered_prompts.build_filter_prompt(code, candidates, FILTER_CONTEXT_LINES)
+    _, total_lines = prompts.format_code_with_line_numbers(code)
+    expected = [c["candidate_id"] for c in candidates]
+    return _call_and_parse(
+        system_prompt, user_prompt, layered_prompts.FILTER_JSON_SCHEMA, "candidate_filter",
+        lambda raw: layered_prompts.parse_filter_json(raw, total_lines, code, expected),
+        max_tokens=FILTER_MAX_TOKENS,
+    )
+
+
+def llm_find_gaps(code: str) -> dict:
+    """Tầng 3: tìm lỗi thuộc 4 loại công cụ không phủ (chia 0, race, rò rỉ dữ liệu, IDOR).
+
+    Trả dict của layered_prompts.parse_gap_json(): {issues, parse_error, dropped, rejected_suggestions}.
+    Raise LLMError khi hết lượt retry.
+    """
+    system_prompt, user_prompt = layered_prompts.build_gap_prompt(code, GAP_MAX_ISSUES)
+    _, total_lines = prompts.format_code_with_line_numbers(code)
+    return _call_and_parse(
+        system_prompt, user_prompt, layered_prompts.GAP_JSON_SCHEMA, "gap_finder",
+        lambda raw: layered_prompts.parse_gap_json(raw, total_lines, code, GAP_MAX_ISSUES),
+        max_tokens=GAP_MAX_TOKENS,
+    )
+
+
 def llm_review(code: str, bandit_view: List[dict], system_prompt: str, user_prompt_builder) -> dict:
-    """Gọi LLM 1 lượt và trả về dict của prompts.parse_and_validate_llm_json():
+    """Lượt review tự do cũ (prompts.py): trả dict của prompts.parse_and_validate_llm_json():
     {bandit_verdicts, new_issues, parse_error, dropped_new_issues, rejected_suggestions}.
 
-    bandit_view: danh sách cảnh báo Bandit đã đổi sang trường Bandit chuẩn
-    (test_id, line_number, issue_text, ...). finding_id B1, B2... theo đúng thứ tự danh sách.
+    Chỉ còn dùng cho mode=llm (mốc so sánh "LLM thuần", không giới hạn loại lỗi, không công cụ).
+    bandit_view: cảnh báo Bandit đã đổi sang trường Bandit chuẩn; finding_id B1, B2... theo đúng thứ tự.
     Raise LLMError nếu hết lượt retry mà vẫn không parse được JSON.
     """
     _, total_lines = prompts.format_code_with_line_numbers(code)
     expected_ids = prompts.expected_bandit_ids(bandit_view)
     user_prompt = user_prompt_builder(code, bandit_view)
-
-    last_raw = ""
-    for attempt in range(1 + LLM_PARSE_RETRIES):
-        last_raw = call_llm(system_prompt, user_prompt, prompts.REVIEW_JSON_SCHEMA, "code_review")
-        result = prompts.parse_and_validate_llm_json(
-            last_raw,
-            total_lines,
-            code_snippet=code,
-            expected_finding_ids=expected_ids,
-        )
-        if not result["parse_error"]:
-            return result
-        log.warning("LLM trả JSON không parse được (lần %s/%s)", attempt + 1, 1 + LLM_PARSE_RETRIES)
-    raise LLMError(f"LLM trả JSON không hợp lệ sau {1 + LLM_PARSE_RETRIES} lần thử: {last_raw[:200]!r}")
+    return _call_and_parse(
+        system_prompt, user_prompt, prompts.REVIEW_JSON_SCHEMA, "code_review",
+        lambda raw: prompts.parse_and_validate_llm_json(
+            raw, total_lines, code_snippet=code, expected_finding_ids=expected_ids),
+    )
 
 
 def llm_verify_patch(
