@@ -10,12 +10,11 @@ import os
 os.environ["LLM_API_KEY"] = "test-key"  # phải đặt trước khi import app.config
 os.environ["USE_LLM"] = "1"
 
-import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-
-from app import candidates, layered_prompts, llm_client, pipeline, static_detectors  # noqa: E402
-from app.main import app  # noqa: E402
-from app.mock_data import SAMPLE_CODE  # noqa: E402
+import pytest
+from app import candidates, layered_prompts, llm_client, pipeline, static_detectors
+from app.main import app
+from app.mock_data import SAMPLE_CODE
+from fastapi.testclient import TestClient
 
 
 # ----------------------------------------------------------------------------

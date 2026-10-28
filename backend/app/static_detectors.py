@@ -27,9 +27,14 @@ view dùng hai Model khác nhau sẽ không bị coi là trùng.
 import ast
 import copy
 import re
-from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple
+from collections.abc import Iterable, Iterator
 
-from .config import STATIC_MAX_NESTING, STATIC_MIN_DUP_BLOCK, STATIC_MIN_DUP_STMTS, USE_STATIC
+from .config import (
+    STATIC_MAX_NESTING,
+    STATIC_MIN_DUP_BLOCK,
+    STATIC_MIN_DUP_STMTS,
+    USE_STATIC,
+)
 
 _BLOCKS = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.With, ast.AsyncWith)
 if hasattr(ast, "TryStar"):
@@ -43,7 +48,7 @@ _SCOPE_BREAK = _FUNCS + (ast.ClassDef, ast.Lambda)
 
 def _candidate(
     rule_id: str, line: int, severity: str, confidence: str, message: str, explanation: str,
-    *, type_: str = "quality", cwe_id: Optional[str] = None, end_line: Optional[int] = None,
+    *, type_: str = "quality", cwe_id: str | None = None, end_line: int | None = None,
     suggestion: str = "",
 ) -> dict:
     return {
@@ -64,7 +69,7 @@ def _candidate(
 # ---------------------------------------------------------------------------
 # Tiện ích AST dùng chung
 # ---------------------------------------------------------------------------
-def _last_name(node: ast.AST) -> Optional[str]:
+def _last_name(node: ast.AST) -> str | None:
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
@@ -72,21 +77,21 @@ def _last_name(node: ast.AST) -> Optional[str]:
     return None
 
 
-def _call_name(call: ast.Call) -> Optional[str]:
+def _call_name(call: ast.Call) -> str | None:
     return _last_name(call.func)
 
 
-def _root_name(node: ast.AST) -> Optional[str]:
+def _root_name(node: ast.AST) -> str | None:
     while isinstance(node, (ast.Attribute, ast.Subscript, ast.Call)):
         node = node.func if isinstance(node, ast.Call) else node.value
     return node.id if isinstance(node, ast.Name) else None
 
 
-def _load_names(node: ast.AST) -> Set[str]:
+def _load_names(node: ast.AST) -> set[str]:
     return {n.id for n in ast.walk(node) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
 
 
-def _target_names(t: ast.AST) -> List[str]:
+def _target_names(t: ast.AST) -> list[str]:
     if isinstance(t, ast.Name):
         return [t.id]
     if isinstance(t, (ast.Tuple, ast.List)):
@@ -96,7 +101,7 @@ def _target_names(t: ast.AST) -> List[str]:
     return []
 
 
-def _iter_scope(body: List[ast.stmt]) -> Iterator[ast.AST]:
+def _iter_scope(body: list[ast.stmt]) -> Iterator[ast.AST]:
     """Duyệt mọi nút trong một phạm vi theo thứ tự tài liệu, KHÔNG đi vào hàm/lớp/lambda lồng nhau
     (bản thân nút def vẫn được trả ra)."""
     stack = list(reversed(body))
@@ -108,7 +113,7 @@ def _iter_scope(body: List[ast.stmt]) -> Iterator[ast.AST]:
         stack.extend(reversed(list(ast.iter_child_nodes(n))))
 
 
-def _func_params(f: ast.AST) -> Set[str]:
+def _func_params(f: ast.AST) -> set[str]:
     a = f.args  # type: ignore[attr-defined]
     names = {x.arg for x in a.posonlyargs + a.args + a.kwonlyargs}
     if a.vararg:
@@ -118,7 +123,7 @@ def _func_params(f: ast.AST) -> Set[str]:
     return names - {"self", "cls"}
 
 
-def _scopes(tree: ast.Module) -> Iterator[Tuple[List[ast.stmt], Set[str]]]:
+def _scopes(tree: ast.Module) -> Iterator[tuple[list[ast.stmt], set[str]]]:
     """(thân phạm vi, tập tham số). Module trước, rồi từng hàm (kể cả hàm lồng nhau, phương thức)."""
     yield tree.body, set()
     for f in ast.walk(tree):
@@ -126,7 +131,7 @@ def _scopes(tree: ast.Module) -> Iterator[Tuple[List[ast.stmt], Set[str]]]:
             yield f.body, _func_params(f)
 
 
-def _is_len_call(node: ast.AST) -> Optional[str]:
+def _is_len_call(node: ast.AST) -> str | None:
     """len(X) với X là Name -> trả 'X'; ngược lại None."""
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "len" \
             and len(node.args) == 1 and isinstance(node.args[0], ast.Name):
@@ -134,7 +139,7 @@ def _is_len_call(node: ast.AST) -> Optional[str]:
     return None
 
 
-def _const_int(node: ast.AST) -> Optional[int]:
+def _const_int(node: ast.AST) -> int | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool):
         return node.value
     return None
@@ -148,7 +153,7 @@ def _is_elif(node: ast.If) -> bool:
     return len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If) and node.orelse[0].col_offset == node.col_offset
 
 
-def _walk(body: List[ast.stmt], level: int, state: dict, nested: List[ast.AST]) -> None:
+def _walk(body: list[ast.stmt], level: int, state: dict, nested: list[ast.AST]) -> None:
     """Duyệt một phạm vi. `level` = số khối điều khiển bao quanh. Hàm/lớp lồng nhau là phạm vi riêng."""
     for st in body:
         if isinstance(st, _FUNCS + (ast.ClassDef,)):
@@ -177,13 +182,13 @@ def _walk(body: List[ast.stmt], level: int, state: dict, nested: List[ast.AST]) 
             _walk(getattr(st, "orelse", []), lvl, state, nested)
 
 
-def detect_deep_nesting(tree: ast.Module) -> List[dict]:
-    out: List[dict] = []
-    scopes: List[Tuple[str, List[ast.stmt]]] = [("<module>", tree.body)]
+def detect_deep_nesting(tree: ast.Module) -> list[dict]:
+    out: list[dict] = []
+    scopes: list[tuple[str, list[ast.stmt]]] = [("<module>", tree.body)]
     while scopes:
         name, body = scopes.pop()
         state = {"max": 0, "first": None}
-        nested: List[ast.AST] = []
+        nested: list[ast.AST] = []
         _walk(body, 0, state, nested)
         if state["first"] is not None:
             where = "mức module" if name == "<module>" else f"'{name}'"
@@ -201,9 +206,9 @@ def detect_deep_nesting(tree: ast.Module) -> List[dict]:
 # ---------------------------------------------------------------------------
 # DUP001 - hàm trùng lặp
 # ---------------------------------------------------------------------------
-def _local_names(func: ast.AST) -> List[str]:
+def _local_names(func: ast.AST) -> list[str]:
     """Tên cục bộ theo thứ tự xuất hiện đầu tiên (tham số, biến gán, biến except)."""
-    names: List[str] = []
+    names: list[str] = []
     declared_outer = set()
     a = func.args  # type: ignore[attr-defined]
     for arg in a.posonlyargs + a.args + a.kwonlyargs + ([a.vararg] if a.vararg else []) + ([a.kwarg] if a.kwarg else []):
@@ -227,7 +232,7 @@ class _Normalizer(ast.NodeTransformer):
     """Đổi tên biến CỤC BỘ thành v0, v1... và hằng số thành tên kiểu. Tên toàn cục/builtin/import giữ nguyên
     (nếu đổi hết thì `len(x)` và `str(x)` sẽ bị coi là một)."""
 
-    def __init__(self, mapping: Dict[str, str]):
+    def __init__(self, mapping: dict[str, str]):
         self.mapping = mapping
 
     def visit_Name(self, node: ast.Name):
@@ -266,13 +271,13 @@ def _stmt_count(func: ast.AST) -> int:
     return sum(isinstance(n, ast.stmt) for n in ast.walk(func)) - 1
 
 
-def detect_duplicate_functions(tree: ast.Module) -> List[dict]:
-    groups: Dict[str, List[ast.AST]] = {}
+def detect_duplicate_functions(tree: ast.Module) -> list[dict]:
+    groups: dict[str, list[ast.AST]] = {}
     for node in ast.walk(tree):
         if isinstance(node, _FUNCS) and _stmt_count(node) >= STATIC_MIN_DUP_STMTS:
             groups.setdefault(_fingerprint(node), []).append(node)
 
-    out: List[dict] = []
+    out: list[dict] = []
     for funcs in groups.values():
         if len(funcs) < 2:
             continue
@@ -291,7 +296,7 @@ def detect_duplicate_functions(tree: ast.Module) -> List[dict]:
 # ---------------------------------------------------------------------------
 # DUP002 - khối lệnh lặp lại giữa các hàm (một phần thân hàm)
 # ---------------------------------------------------------------------------
-def _body_without_doc(func: ast.AST) -> List[ast.stmt]:
+def _body_without_doc(func: ast.AST) -> list[ast.stmt]:
     body = list(func.body)  # type: ignore[attr-defined]
     if body and isinstance(body[0], ast.Expr) and isinstance(getattr(body[0], "value", None), ast.Constant) \
             and isinstance(body[0].value.value, str):
@@ -304,7 +309,7 @@ def _stmt_weight(stmt: ast.AST) -> int:
 
 
 class _WindowNormalizer(ast.NodeTransformer):
-    def __init__(self, mapping: Dict[str, str]):
+    def __init__(self, mapping: dict[str, str]):
         self.mapping = mapping
 
     def visit_Name(self, node: ast.Name):
@@ -321,10 +326,10 @@ class _WindowNormalizer(ast.NodeTransformer):
         return ast.copy_location(ast.Constant(value=f"<{type(node.value).__name__}>"), node)
 
 
-def _window_fingerprint(stmts: List[ast.stmt], params: Set[str]) -> str:
+def _window_fingerprint(stmts: list[ast.stmt], params: set[str]) -> str:
     """Đổi tên biến được GÁN trong cửa sổ (và tham số của hàm) theo thứ tự xuất hiện; hằng số -> tên kiểu."""
     cp = copy.deepcopy(stmts)
-    order: List[str] = []
+    order: list[str] = []
     for s in cp:
         for n in ast.walk(s):
             if isinstance(n, ast.Name) and (isinstance(n.ctx, ast.Store) or n.id in params) and n.id not in order:
@@ -333,19 +338,19 @@ def _window_fingerprint(stmts: List[ast.stmt], params: Set[str]) -> str:
     return "|".join(ast.dump(norm.visit(s)) for s in cp)
 
 
-def detect_duplicate_blocks(tree: ast.Module) -> List[dict]:
+def detect_duplicate_blocks(tree: ast.Module) -> list[dict]:
     funcs = sorted((f for f in ast.walk(tree) if isinstance(f, _FUNCS)), key=lambda f: f.lineno)
     if len(funcs) < 2:
         return []
     win = max(2, STATIC_MIN_DUP_BLOCK)
     whole = [_fingerprint(f) if _stmt_count(f) >= STATIC_MIN_DUP_STMTS else None for f in funcs]
-    bodies: List[List[ast.stmt]] = []
-    index: Dict[str, List[Tuple[int, int]]] = {}
+    bodies: list[list[ast.stmt]] = []
+    index: dict[str, list[tuple[int, int]]] = {}
     for fi, f in enumerate(funcs):
         params = _func_params(f)
         body = _body_without_doc(f)
         bodies.append(body)
-        for s in range(0, len(body) - win + 1):
+        for s in range(len(body) - win + 1):
             chunk = body[s:s + win]
             if sum(_stmt_weight(x) for x in chunk) < win:
                 continue
@@ -353,7 +358,7 @@ def detect_duplicate_blocks(tree: ast.Module) -> List[dict]:
                 continue  # chỉ gồm phép gán thuần/hằng: quá chung chung
             index.setdefault(_window_fingerprint(chunk, params), []).append((fi, s))
 
-    shared: Dict[Tuple[int, int], Set[int]] = {}  # (hàm sau, hàm trước) -> chỉ số câu lệnh trùng ở hàm sau
+    shared: dict[tuple[int, int], set[int]] = {}  # (hàm sau, hàm trước) -> chỉ số câu lệnh trùng ở hàm sau
     for entries in index.values():
         fis = sorted({fi for fi, _ in entries})
         if len(fis) < 2:
@@ -367,12 +372,12 @@ def detect_duplicate_blocks(tree: ast.Module) -> List[dict]:
                 continue  # đã có DUP001 cho cả hàm
             shared.setdefault((g, f), set()).update(range(s, s + win))
 
-    best: Dict[int, Tuple[int, Set[int]]] = {}
+    best: dict[int, tuple[int, set[int]]] = {}
     for (g, f), cov in shared.items():
         if len(cov) >= win and (g not in best or len(cov) > len(best[g][1])):
             best[g] = (f, cov)
 
-    out: List[dict] = []
+    out: list[dict] = []
     for g, (f, cov) in sorted(best.items()):
         body = bodies[g]
         first_stmt, last_stmt = body[min(cov)], body[max(cov)]
@@ -393,26 +398,26 @@ def detect_duplicate_blocks(tree: ast.Module) -> List[dict]:
 _SPLIT_FUNCS = {"train_test_split"}
 
 
-def detect_split_leakage(tree: ast.Module) -> List[dict]:
-    out: List[dict] = []
-    seen: Set[int] = set()
+def detect_split_leakage(tree: ast.Module) -> list[dict]:
+    out: list[dict] = []
+    seen: set[int] = set()
     for body, _ in _scopes(tree):
         nodes = list(_iter_scope(body))
-        fit_line: Dict[str, int] = {}
+        fit_line: dict[str, int] = {}
         for n in nodes:
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "fit":
                 r = _root_name(n.func.value)
                 if r:
                     fit_line.setdefault(r, n.lineno)
 
-        leaked: Dict[str, int] = {}
+        leaked: dict[str, int] = {}
         assigns = [x for x in nodes if isinstance(x, (ast.Assign, ast.AnnAssign)) and x.value is not None]
         for n in sorted(assigns, key=lambda x: (x.lineno, x.col_offset)):
             v = n.value
             targets = [t for tg in n.targets for t in _target_names(tg)] if isinstance(n, ast.Assign) \
                 else _target_names(n.target)
             has_split = any(isinstance(c, ast.Call) and _call_name(c) in _SPLIT_FUNCS for c in ast.walk(v))
-            line: Optional[int] = None
+            line: int | None = None
             for c in ast.walk(v):
                 if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute):
                     if c.func.attr == "fit_transform":
@@ -461,12 +466,12 @@ class _GuardWalker(ast.NodeVisitor):
     """Duyệt AST và nhớ các `except` đang bao quanh nút hiện tại (chỉ trong thân `try`, reset khi vào hàm)."""
 
     def __init__(self) -> None:
-        self.guards: List[Set[str]] = []
-        self.gets: List[ast.Call] = []
-        self.subs: List[ast.Subscript] = []
+        self.guards: list[set[str]] = []
+        self.gets: list[ast.Call] = []
+        self.subs: list[ast.Subscript] = []
 
     def _try(self, node) -> None:
-        caught: Set[str] = set()
+        caught: set[str] = set()
         for h in node.handlers:
             if h.type is None:
                 caught.add("*")
@@ -496,7 +501,7 @@ class _GuardWalker(ast.NodeVisitor):
     visit_AsyncFunctionDef = _func
     visit_Lambda = _func
 
-    def _protected(self, names: Set[str]) -> bool:
+    def _protected(self, names: set[str]) -> bool:
         return any("*" in g or g & names for g in self.guards)
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -514,10 +519,10 @@ class _GuardWalker(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def detect_django_pitfalls(tree: ast.Module) -> List[dict]:
+def detect_django_pitfalls(tree: ast.Module) -> list[dict]:
     w = _GuardWalker()
     w.visit(tree)
-    out: List[dict] = []
+    out: list[dict] = []
     for c in w.gets:
         model = _root_name(c.func.value) or "Model"  # type: ignore[attr-defined]
         out.append(_candidate(
@@ -543,7 +548,7 @@ def detect_django_pitfalls(tree: ast.Module) -> List[dict]:
 # ---------------------------------------------------------------------------
 # OBO001 / OBO002 - lỗi lệch một đơn vị, bỏ phần dư của lô
 # ---------------------------------------------------------------------------
-def _plus_const(node: ast.AST) -> Optional[Tuple[str, int]]:
+def _plus_const(node: ast.AST) -> tuple[str, int] | None:
     """len(X) + k  (k >= 1) hoặc k + len(X) -> ('X', k)."""
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
         for a, b in ((node.left, node.right), (node.right, node.left)):
@@ -553,18 +558,18 @@ def _plus_const(node: ast.AST) -> Optional[Tuple[str, int]]:
     return None
 
 
-def _subscripts_of(body: Iterable[ast.AST], name: str) -> List[ast.Subscript]:
+def _subscripts_of(body: Iterable[ast.AST], name: str) -> list[ast.Subscript]:
     return [n for s in body for n in ast.walk(s)
             if isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name) and n.value.id == name]
 
 
-def detect_off_by_one(tree: ast.Module) -> List[dict]:
-    out: List[dict] = []
-    seen: Set[Tuple[str, int]] = set()
+def detect_off_by_one(tree: ast.Module) -> list[dict]:
+    out: list[dict] = []
+    seen: set[tuple[str, int]] = set()
 
     def add(
         rule: str, line: int, sev: str, conf: str, msg: str, expl: str,
-        end: Optional[int] = None, suggestion: str = "",
+        end: int | None = None, suggestion: str = "",
     ) -> None:
         if (rule, line) not in seen:
             seen.add((rule, line))
@@ -648,7 +653,7 @@ def detect_off_by_one(tree: ast.Module) -> List[dict]:
 # SQL001 / SQL002 / PATH001 - taint nhẹ trong phạm vi một hàm
 # ---------------------------------------------------------------------------
 _SQL_SINKS = {"execute", "executemany", "executescript", "raw"}
-_SQL_RE = re.compile(r"\b(select|insert|update|delete|drop|create|alter|replace)\b", re.I)
+_SQL_RE = re.compile(r"\b(select|insert|update|delete|drop|create|alter|replace)\b", re.IGNORECASE)
 _PATH_SINKS = {"open", "send_file", "send_from_directory", "FileResponse", "remove", "unlink", "rmtree",
                "listdir", "rename", "read_text", "write_text", "read_bytes"}
 _PATH_GUARDS = {"realpath", "resolve", "commonpath", "is_relative_to", "secure_filename", "basename", "safe_join"}
@@ -680,7 +685,7 @@ def _sql_const(node: ast.AST) -> bool:
                for c in ast.walk(node))
 
 
-def _dyn_str(node: ast.AST, tainted: Set[str]) -> bool:
+def _dyn_str(node: ast.AST, tainted: set[str]) -> bool:
     """Biểu thức dựng chuỗi động (f-string, +, %, .format) có chứa giá trị tainted."""
     if isinstance(node, ast.JoinedStr):
         return any(isinstance(p, ast.FormattedValue) and (_load_names(p.value) & tainted or _is_source(p.value))
@@ -694,8 +699,8 @@ def _dyn_str(node: ast.AST, tainted: Set[str]) -> bool:
     return False
 
 
-def _sanitized_names(nodes: List[ast.AST]) -> Set[str]:
-    s: Set[str] = set()
+def _sanitized_names(nodes: list[ast.AST]) -> set[str]:
+    s: set[str] = set()
     for n in nodes:
         if isinstance(n, ast.Compare) and any(isinstance(o, (ast.In, ast.NotIn)) for o in n.ops):
             s |= _load_names(n.left)
@@ -709,16 +714,16 @@ def _sanitized_names(nodes: List[ast.AST]) -> Set[str]:
     return s
 
 
-def _taint_scope(body: List[ast.stmt], params: Set[str], out: List[dict], seen: Set[Tuple[str, int]]) -> None:
+def _taint_scope(body: list[ast.stmt], params: set[str], out: list[dict], seen: set[tuple[str, int]]) -> None:
     nodes = list(_iter_scope(body))
     sanitized = _sanitized_names(nodes)
-    tainted: Set[str] = set(params) - sanitized
-    strong: Set[str] = set()        # tainted có gốc từ request/input()/sys.argv (không chỉ là tham số)
-    built: Dict[str, int] = {}      # biến chứa câu SQL đã nối chuỗi động -> dòng dựng
-    sqlish: Set[str] = set()        # biến đang giữ chuỗi SQL hằng
+    tainted: set[str] = set(params) - sanitized
+    strong: set[str] = set()        # tainted có gốc từ request/input()/sys.argv (không chỉ là tham số)
+    built: dict[str, int] = {}      # biến chứa câu SQL đã nối chuỗi động -> dòng dựng
+    sqlish: set[str] = set()        # biến đang giữ chuỗi SQL hằng
     has_path_guard = any(isinstance(n, ast.Call) and _call_name(n) in _PATH_GUARDS for n in nodes)
 
-    def emit(rule: str, line: int, sev: str, conf: str, msg: str, expl: str, cwe: str, end: Optional[int] = None) -> None:
+    def emit(rule: str, line: int, sev: str, conf: str, msg: str, expl: str, cwe: str, end: int | None = None) -> None:
         if (rule, line) not in seen:
             seen.add((rule, line))
             out.append(_candidate(rule, line, sev, conf, msg, expl, type_="security", cwe_id=cwe, end_line=end))
@@ -789,7 +794,7 @@ def _taint_scope(body: List[ast.stmt], params: Set[str], out: List[dict], seen: 
                      f"cần kiểm tra các điểm gọi.", "CWE-89", n.lineno)
         # ---- Path traversal
         if name in _PATH_SINKS and not has_path_guard:
-            exprs: List[ast.AST] = list(n.args) + [k.value for k in n.keywords]
+            exprs: list[ast.AST] = list(n.args) + [k.value for k in n.keywords]
             if name in ("read_text", "write_text", "read_bytes") and isinstance(n.func, ast.Attribute):
                 exprs.append(n.func.value)
             if any((_load_names(e) & tainted) or _is_source(e) for e in exprs):
@@ -801,9 +806,9 @@ def _taint_scope(body: List[ast.stmt], params: Set[str], out: List[dict], seen: 
                      f"Kẻ tấn công có thể dùng '../' để đọc/ghi tệp ngoài thư mục dự kiến.", "CWE-22", end)
 
 
-def detect_taint_sinks(tree: ast.Module) -> List[dict]:
-    out: List[dict] = []
-    seen: Set[Tuple[str, int]] = set()
+def detect_taint_sinks(tree: ast.Module) -> list[dict]:
+    out: list[dict] = []
+    seen: set[tuple[str, int]] = set()
     for body, params in _scopes(tree):
         _taint_scope(body, params, out, seen)
     return out
@@ -812,7 +817,7 @@ def detect_taint_sinks(tree: ast.Module) -> List[dict]:
 # ---------------------------------------------------------------------------
 # DIV001 - phép chia có thể dùng độ dài của collection rỗng
 # ---------------------------------------------------------------------------
-def _truthy_len_names(test: ast.AST) -> Set[str]:
+def _truthy_len_names(test: ast.AST) -> set[str]:
     """Nhận diện các guard phổ biến: `if items` và `if len(items) > 0`."""
     if isinstance(test, ast.Name):
         return {test.id}
@@ -833,11 +838,11 @@ def _truthy_len_names(test: ast.AST) -> Set[str]:
     return set()
 
 
-def detect_possible_zero_division(tree: ast.Module) -> List[dict]:
+def detect_possible_zero_division(tree: ast.Module) -> list[dict]:
     """Bắt chia trực tiếp cho 0 hoặc len(collection) khi collection có thể rỗng."""
-    out: List[dict] = []
+    out: list[dict] = []
 
-    def walk(body: List[ast.stmt], guarded: Set[str]) -> None:
+    def walk(body: list[ast.stmt], guarded: set[str]) -> None:
         for stmt in body:
             if isinstance(stmt, ast.If):
                 body_guard = guarded | _truthy_len_names(stmt.test)
@@ -897,8 +902,8 @@ def detect_possible_zero_division(tree: ast.Module) -> List[dict]:
 _OWNER_KEYS = {"user", "owner", "created_by", "account", "tenant", "organization"}
 
 
-def _decorator_names(func: ast.AST) -> Set[str]:
-    names: Set[str] = set()
+def _decorator_names(func: ast.AST) -> set[str]:
+    names: set[str] = set()
     for dec in getattr(func, "decorator_list", []):
         name = _call_name(dec) if isinstance(dec, ast.Call) else _last_name(dec)
         if name:
@@ -906,8 +911,8 @@ def _decorator_names(func: ast.AST) -> Set[str]:
     return names
 
 
-def detect_django_idor(tree: ast.Module) -> List[dict]:
-    out: List[dict] = []
+def detect_django_idor(tree: ast.Module) -> list[dict]:
+    out: list[dict] = []
     for fn in (n for n in ast.walk(tree) if isinstance(n, _FUNCS)):
         if "login_required" not in _decorator_names(fn):
             continue
@@ -967,21 +972,21 @@ def detect_django_idor(tree: ast.Module) -> List[dict]:
 _RESOURCE_FIELDS = {"stock", "quantity", "balance", "available", "inventory", "credits"}
 
 
-def _attribute_key(node: ast.AST) -> Optional[Tuple[str, str]]:
+def _attribute_key(node: ast.AST) -> tuple[str, str] | None:
     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
         return node.value.id, node.attr
     return None
 
 
-def detect_check_then_update_race(tree: ast.Module) -> List[dict]:
-    out: List[dict] = []
+def detect_check_then_update_race(tree: ast.Module) -> list[dict]:
+    out: list[dict] = []
     for fn in (n for n in ast.walk(tree) if isinstance(n, _FUNCS)):
         nodes = list(_iter_scope(fn.body))
         calls = [n for n in nodes if isinstance(n, ast.Call)]
         if any(_call_name(c) == "select_for_update" for c in calls):
             continue
 
-        model_objects: Set[str] = set()
+        model_objects: set[str] = set()
         for n in nodes:
             if not isinstance(n, (ast.Assign, ast.AnnAssign)) or n.value is None:
                 continue
@@ -994,7 +999,7 @@ def detect_check_then_update_race(tree: ast.Module) -> List[dict]:
                 else _target_names(n.target)
             model_objects.update(targets)
 
-        checked: Set[Tuple[str, str]] = set()
+        checked: set[tuple[str, str]] = set()
         for n in nodes:
             if not isinstance(n, ast.If):
                 continue
@@ -1007,7 +1012,7 @@ def detect_check_then_update_race(tree: ast.Module) -> List[dict]:
                     if key and key[0] in model_objects and key[1] in _RESOURCE_FIELDS:
                         checked.add(key)
 
-        updated: Dict[Tuple[str, str], int] = {}
+        updated: dict[tuple[str, str], int] = {}
         for n in nodes:
             if isinstance(n, ast.AugAssign):
                 key = _attribute_key(n.target)
@@ -1043,7 +1048,7 @@ def detect_check_then_update_race(tree: ast.Module) -> List[dict]:
 # ---------------------------------------------------------------------------
 # SQL interprocedural summaries - truyền trạng thái taint qua helper trả về query
 # ---------------------------------------------------------------------------
-def _expr_sql_state(node: ast.AST, tainted: Set[str], sqlish: Set[str], dynamic: Set[str], summaries: dict):
+def _expr_sql_state(node: ast.AST, tainted: set[str], sqlish: set[str], dynamic: set[str], summaries: dict):
     names = _load_names(node)
     calls = [n for n in ast.walk(node) if isinstance(n, ast.Call)]
     taint = bool(names & tainted) or _is_source(node)
@@ -1068,10 +1073,10 @@ def _expr_sql_state(node: ast.AST, tainted: Set[str], sqlish: Set[str], dynamic:
     return taint, sql, dyn
 
 
-def _sql_function_summary(fn: ast.AST, summaries: dict, findings: Optional[List[dict]] = None) -> Tuple[bool, bool, bool]:
+def _sql_function_summary(fn: ast.AST, summaries: dict, findings: list[dict] | None = None) -> tuple[bool, bool, bool]:
     params = _func_params(fn)
     tainted, sqlish, dynamic = set(params), set(), set()
-    helper_derived: Set[str] = set()
+    helper_derived: set[str] = set()
     nodes = sorted(_iter_scope(fn.body), key=lambda n: (getattr(n, "lineno", 0), getattr(n, "col_offset", 0)))
     for n in nodes:
         if isinstance(n, (ast.Assign, ast.AnnAssign)) and n.value is not None:
@@ -1128,7 +1133,7 @@ def _sql_function_summary(fn: ast.AST, summaries: dict, findings: Optional[List[
     return returns_taint, returns_sql, returns_dynamic
 
 
-def detect_interprocedural_sql(tree: ast.Module) -> List[dict]:
+def detect_interprocedural_sql(tree: ast.Module) -> list[dict]:
     funcs = {f.name: f for f in ast.walk(tree) if isinstance(f, _FUNCS)}
     summaries = {name: (False, False, False) for name in funcs}
     # Tính tới điểm cố định để hỗ trợ helper gọi helper, không phụ thuộc thứ tự định nghĩa.
@@ -1142,10 +1147,10 @@ def detect_interprocedural_sql(tree: ast.Module) -> List[dict]:
                 changed = True
         if not changed:
             break
-    out: List[dict] = []
-    seen: Set[int] = set()
+    out: list[dict] = []
+    seen: set[int] = set()
     for fn in funcs.values():
-        findings: List[dict] = []
+        findings: list[dict] = []
         _sql_function_summary(fn, summaries, findings)
         for issue in findings:
             if issue["line"] not in seen:
@@ -1162,7 +1167,7 @@ _DETECTORS = (
 )
 
 
-def run_static(code: str) -> Tuple[List[dict], Optional[str]]:
+def run_static(code: str) -> tuple[list[dict], str | None]:
     """Trả về (ứng viên, cảnh báo | None). Không bao giờ raise: một detector lỗi không làm hỏng các detector khác."""
     if not USE_STATIC or not code.strip():
         return [], None
@@ -1170,8 +1175,8 @@ def run_static(code: str) -> Tuple[List[dict], Optional[str]]:
         tree = ast.parse(code)
     except (SyntaxError, ValueError):
         return [], "Mã nguồn có lỗi cú pháp nên bộ phát hiện tự viết (ast) bị bỏ qua."
-    out: List[dict] = []
-    failed: List[str] = []
+    out: list[dict] = []
+    failed: list[str] = []
     for det in _DETECTORS:
         try:
             out += det(tree)

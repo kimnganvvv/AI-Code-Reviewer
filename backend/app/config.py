@@ -6,7 +6,6 @@ phải sửa code. Khi deploy lên Render/Railway chỉ cần set biến trên d
 
 import os
 from pathlib import Path
-from typing import List
 
 from dotenv import load_dotenv
 
@@ -14,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent  # thư mục backend/
 load_dotenv(BASE_DIR / ".env")
 
 
-def _csv(name: str, default: str) -> List[str]:
+def _csv(name: str, default: str) -> list[str]:
     return [x.strip() for x in os.getenv(name, default).split(",") if x.strip()]
 
 

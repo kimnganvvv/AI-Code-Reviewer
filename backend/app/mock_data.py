@@ -4,7 +4,6 @@ Dùng để Người 2 (Chrome Extension) và Người 3 (prompt) phát triển 
 mà không cần API key LLM.
 """
 
-from typing import List
 
 # Mẫu code dùng chung cho Web UI, sample endpoint và demo
 SAMPLE_CODE = """import os
@@ -28,7 +27,7 @@ def total(values):
 """
 
 
-def mock_issues() -> List[dict]:
+def mock_issues() -> list[dict]:
     return [
         {
             "line": 5,

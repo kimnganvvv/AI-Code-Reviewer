@@ -16,11 +16,17 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from .config import (
-    RUFF_IGNORE, RUFF_MAX_ARGS, RUFF_MAX_BRANCHES, RUFF_MAX_COMPLEXITY, RUFF_MAX_RETURNS,
-    RUFF_MAX_STATEMENTS, RUFF_SELECT, RUFF_TIMEOUT, USE_RUFF,
+    RUFF_IGNORE,
+    RUFF_MAX_ARGS,
+    RUFF_MAX_BRANCHES,
+    RUFF_MAX_COMPLEXITY,
+    RUFF_MAX_RETURNS,
+    RUFF_MAX_STATEMENTS,
+    RUFF_SELECT,
+    RUFF_TIMEOUT,
+    USE_RUFF,
 )
 
 log = logging.getLogger("ai-code-reviewer")
@@ -53,7 +59,7 @@ _DEFAULT_RULE = ("quality", "low", "medium", None)
 _RULE_CODE_RE = re.compile(r"^[A-Z]{1,4}\d{2,4}$")  # F401, B006, SIM115, PLR0913...
 
 
-def _classify(code: str) -> Tuple[str, str, str, Optional[str]]:
+def _classify(code: str) -> tuple[str, str, str, str | None]:
     best = None
     for prefix, *rest in _RULES:
         if code.startswith(prefix) and (best is None or len(prefix) > len(best[0])):
@@ -61,7 +67,7 @@ def _classify(code: str) -> Tuple[str, str, str, Optional[str]]:
     return tuple(best[1:]) if best else _DEFAULT_RULE  # type: ignore[return-value]
 
 
-def _ruff_cmd() -> Optional[List[str]]:
+def _ruff_cmd() -> list[str] | None:
     exe = shutil.which("ruff")
     if exe:
         return [exe]
@@ -74,7 +80,7 @@ def ruff_available() -> bool:
     return USE_RUFF and _ruff_cmd() is not None
 
 
-def _toml_list(items: List[str]) -> str:
+def _toml_list(items: list[str]) -> str:
     return "[" + ", ".join(json.dumps(x) for x in items) + "]"
 
 
@@ -93,7 +99,7 @@ def _config_text() -> str:
     )
 
 
-def run_ruff(code: str) -> Tuple[List[dict], Optional[str]]:
+def run_ruff(code: str) -> tuple[list[dict], str | None]:
     """Trả về (danh sách ứng viên, cảnh báo | None). Không bao giờ raise."""
     if not USE_RUFF or not code.strip():
         return [], None
@@ -123,7 +129,7 @@ def run_ruff(code: str) -> Tuple[List[dict], Optional[str]]:
     except json.JSONDecodeError:
         return [], "Không đọc được kết quả JSON của Ruff."
 
-    out: List[dict] = []
+    out: list[dict] = []
     warning = None
     for d in data:
         code_id = d.get("code")

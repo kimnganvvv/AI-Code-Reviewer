@@ -1,9 +1,8 @@
 """Contract test: đảm bảo response luôn đúng 10 trường theo hợp đồng v2."""
-from fastapi.testclient import TestClient
-
 import app.main as main_module
 from app.main import app
 from app.mock_data import SAMPLE_CODE, mock_issues
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 

@@ -6,7 +6,6 @@ Module này lo: chuẩn hóa Bandit về dạng đó, khử trùng giữa các c
 đánh `candidate_id` (C1, C2...), áp phán quyết của LLM và đổi sang Issue của hợp đồng API.
 """
 
-from typing import Dict, List, Optional, Tuple
 
 from .bandit_runner import run_bandit
 from .ruff_runner import run_ruff
@@ -52,9 +51,9 @@ def _same_finding(a: dict, b: dict) -> bool:
     return bool(a.get("cwe_id")) and a.get("cwe_id") == b.get("cwe_id") and abs(a["line"] - b["line"]) <= 1
 
 
-def dedupe_candidates(cands: List[dict]) -> Tuple[List[dict], int]:
+def dedupe_candidates(cands: list[dict]) -> tuple[list[dict], int]:
     """Giữ ứng viên của công cụ ưu tiên cao hơn (bandit > ruff > static). Trả (danh sách, số bị gộp)."""
-    kept: List[dict] = []
+    kept: list[dict] = []
     merged = 0
     for c in sorted(cands, key=lambda x: (TOOL_PRIORITY.get(x["tool"], 9), x["line"])):
         dup = next((k for k in kept if _same_finding(k, c)), None)
@@ -68,9 +67,9 @@ def dedupe_candidates(cands: List[dict]) -> Tuple[List[dict], int]:
 
 def collect_candidates(code: str, *, bandit: bool = True, ruff: bool = True, static: bool = True) -> dict:
     """Chạy Tầng 1. Trả về {candidates, counts, warnings, merged}."""
-    raw: List[dict] = []
+    raw: list[dict] = []
     counts = {"bandit": 0, "ruff": 0, "static": 0}
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     if bandit:
         b = [from_bandit_issue(x) for x in run_bandit(code)]
@@ -96,7 +95,7 @@ def collect_candidates(code: str, *, bandit: bool = True, ruff: bool = True, sta
 # ---------------------------------------------------------------------------
 # Chọn ứng viên gửi LLM / phương án dự phòng
 # ---------------------------------------------------------------------------
-def split_for_filter(cands: List[dict], limit: int) -> Tuple[List[dict], List[dict]]:
+def split_for_filter(cands: list[dict], limit: int) -> tuple[list[dict], list[dict]]:
     """Giữ tối đa `limit` ứng viên quan trọng nhất (bảo mật trước, rồi severity cao) để gửi LLM.
     Trả (sẽ gửi - đã sắp theo dòng và gán candidate_id, phần vượt trần)."""
     ranked = sorted(
@@ -110,7 +109,7 @@ def split_for_filter(cands: List[dict], limit: int) -> Tuple[List[dict], List[di
     return sent, overflow
 
 
-def fallback_candidates(cands: List[dict]) -> List[dict]:
+def fallback_candidates(cands: list[dict]) -> list[dict]:
     """Khi không có phán quyết LLM: giữ MỌI cảnh báo Bandit (bỏ sót bảo mật nguy hiểm hơn báo thừa),
     còn Ruff/static chỉ giữ mức >= medium để không đổ nhiễu lên người dùng."""
     return [c for c in cands if c["tool"] == "bandit" or SEV_RANK.get(c["severity"], 0) >= SEV_RANK["medium"]]
@@ -135,7 +134,7 @@ def candidate_to_issue(c: dict) -> dict:
     }
 
 
-def apply_filter_verdicts(sent: List[dict], verdicts: List[dict]) -> Tuple[List[dict], int]:
+def apply_filter_verdicts(sent: list[dict], verdicts: list[dict]) -> tuple[list[dict], int]:
     """Áp phán quyết Tầng 2 lên ứng viên đã gửi. Trả (issue được giữ, số bị loại).
 
     - keep=false              -> loại, đếm vào suppressed.
@@ -144,12 +143,12 @@ def apply_filter_verdicts(sent: List[dict], verdicts: List[dict]) -> Tuple[List[
                                  hoàn toàn gợi ý mẫu của công cụ (LLM có thể chủ ý để null vì không vá an toàn
                                  được), và chỉ nhận khi khoảng dòng của nó bao trùm dòng ứng viên.
     """
-    by_id: Dict[str, dict] = {v.get("candidate_id"): v for v in verdicts or []}
-    kept: List[dict] = []
+    by_id: dict[str, dict] = {v.get("candidate_id"): v for v in verdicts or []}
+    kept: list[dict] = []
     suppressed = 0
     for c in sent:
         issue = candidate_to_issue(c)
-        v: Optional[dict] = by_id.get(c.get("candidate_id"))
+        v: dict | None = by_id.get(c.get("candidate_id"))
         if v is None or v.get("auto_default"):
             kept.append(issue)
             continue
@@ -184,7 +183,7 @@ def apply_filter_verdicts(sent: List[dict], verdicts: List[dict]) -> Tuple[List[
 # ---------------------------------------------------------------------------
 # Tầng 3: loại lỗi LLM tìm thêm mà trùng với ứng viên của công cụ
 # ---------------------------------------------------------------------------
-def drop_overlapping_gaps(gap_issues: List[dict], cands: List[dict]) -> Tuple[List[dict], int]:
+def drop_overlapping_gaps(gap_issues: list[dict], cands: list[dict]) -> tuple[list[dict], int]:
     """Bỏ lỗi Tầng 3 nếu chồng dòng với một ứng viên cùng CWE (kể cả ứng viên Tầng 2 đã loại:
     quyết định của bộ lọc không bị Tầng 3 lật lại)."""
     kept, dropped = [], 0
