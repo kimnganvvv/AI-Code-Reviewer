@@ -18,13 +18,18 @@ import logging
 import os
 import re
 import time
-from typing import List, Optional
 
 import requests
 
 from . import layered_prompts, prompts
 from .config import (
-    FILTER_CONTEXT_LINES, GAP_MAX_ISSUES, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_TEMPERATURE, LLM_TIMEOUT,
+    FILTER_CONTEXT_LINES,
+    GAP_MAX_ISSUES,
+    LLM_API_KEY,
+    LLM_BASE_URL,
+    LLM_MODEL,
+    LLM_TEMPERATURE,
+    LLM_TIMEOUT,
 )
 
 log = logging.getLogger("ai-code-reviewer")
@@ -53,7 +58,7 @@ class LLMError(RuntimeError):
     pass
 
 
-def _response_format(schema: Optional[dict], name: str) -> Optional[dict]:
+def _response_format(schema: dict | None, name: str) -> dict | None:
     if not schema or STRUCTURED_MODE == "off":
         return None
     if STRUCTURED_MODE == "json_object":
@@ -75,10 +80,10 @@ def _post(payload: dict) -> requests.Response:
         raise LLMError(f"Không kết nối được LLM: {e}") from e
 
 
-_RETRY_IN_RE = re.compile(r"try again in\s*(?:(\d+)m)?\s*([\d.]+)\s*(ms|s)\b", re.I)
+_RETRY_IN_RE = re.compile(r"try again in\s*(?:(\d+)m)?\s*([\d.]+)\s*(ms|s)\b", re.IGNORECASE)
 
 
-def _retry_after_seconds(r: requests.Response) -> Optional[float]:
+def _retry_after_seconds(r: requests.Response) -> float | None:
     """Đọc thời gian cần chờ từ header Retry-After hoặc từ câu 'Please try again in 17.7s'."""
     h = r.headers.get("retry-after") if getattr(r, "headers", None) else None
     if h:
@@ -128,11 +133,11 @@ def _send(payload: dict) -> requests.Response:
 def call_llm(
     system_prompt: str,
     user_prompt: str,
-    response_schema: Optional[dict] = None,
+    response_schema: dict | None = None,
     schema_name: str = "response",
     *,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> str:
     """`temperature`/`max_tokens` None = dùng mặc định toàn cục; max_tokens=0 = không giới hạn."""
     token_cap = LLM_MAX_TOKENS if max_tokens is None else max_tokens
@@ -181,12 +186,12 @@ def call_llm(
 
 
 # Giữ lại cho các test/script cũ; luồng review mới KHÔNG dùng hàm này.
-def extract_json_array(text: str) -> List[dict]:
+def extract_json_array(text: str) -> list[dict]:
     if not text:
         return []
     s = text.strip()
     if "```" in s:
-        blocks = re.findall(r"```(?:json)?\s*(.*?)```", s, re.S)
+        blocks = re.findall(r"```(?:json)?\s*(.*?)```", s, re.DOTALL)
         if blocks:
             s = blocks[0].strip()
     i = s.find("[")
@@ -206,12 +211,12 @@ def extract_json_array(text: str) -> List[dict]:
 def _call_and_parse(
     system_prompt: str,
     user_prompt: str,
-    schema: Optional[dict],
+    schema: dict | None,
     schema_name: str,
     parse,
     *,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> dict:
     """Gọi LLM rồi parse; parse_error -> gọi lại tối đa LLM_PARSE_RETRIES lần. `parse(raw)` phải trả dict có khóa
     'parse_error'. Raise LLMError nếu hết lượt mà vẫn không parse được."""
@@ -226,7 +231,7 @@ def _call_and_parse(
     raise LLMError(f"LLM trả JSON không hợp lệ sau {1 + LLM_PARSE_RETRIES} lần thử: {last_raw[:200]!r}")
 
 
-def llm_filter(code: str, candidates: List[dict]) -> dict:
+def llm_filter(code: str, candidates: list[dict]) -> dict:
     """Tầng 2: phán quyết keep/drop cho các ứng viên (đã có candidate_id) trong MỘT lời gọi.
 
     Trả dict của layered_prompts.parse_filter_json(): {verdicts, parse_error, rejected_suggestions}.
@@ -257,7 +262,7 @@ def llm_find_gaps(code: str) -> dict:
     )
 
 
-def llm_review(code: str, bandit_view: List[dict], system_prompt: str, user_prompt_builder) -> dict:
+def llm_review(code: str, bandit_view: list[dict], system_prompt: str, user_prompt_builder) -> dict:
     """Lượt review tự do cũ (prompts.py): trả dict của prompts.parse_and_validate_llm_json():
     {bandit_verdicts, new_issues, parse_error, dropped_new_issues, rejected_suggestions}.
 

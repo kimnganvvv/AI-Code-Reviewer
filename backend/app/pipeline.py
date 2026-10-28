@@ -13,12 +13,16 @@ Các chế độ (để đo ablation từng tầng):
 """
 
 import logging
-from typing import List, Optional, Tuple
 
 from . import prompts
 from .candidates import (
-    SEV_RANK, apply_filter_verdicts, candidate_to_issue, collect_candidates, drop_overlapping_gaps,
-    fallback_candidates, split_for_filter,
+    SEV_RANK,
+    apply_filter_verdicts,
+    candidate_to_issue,
+    collect_candidates,
+    drop_overlapping_gaps,
+    fallback_candidates,
+    split_for_filter,
 )
 from .config import FILTER_MAX_CANDIDATES, USE_GAP_LAYER, llm_is_configured
 from .llm_client import LLMError, llm_filter, llm_find_gaps, llm_review
@@ -35,7 +39,7 @@ def normalize_mode(mode: str | None) -> str:
 
 
 # Line Validation: lưới an toàn cuối cùng (số dòng của công cụ vốn đúng, của LLM đã qua parser)
-def validate_lines(issues: List[dict], code: str) -> Tuple[List[dict], int]:
+def validate_lines(issues: list[dict], code: str) -> tuple[list[dict], int]:
     total = len(code.splitlines())
     if total == 0:
         return [], len(issues)
@@ -93,7 +97,7 @@ def new_issue_to_issue(n: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Từng tầng LLM. Mỗi hàm trả (kết quả, thông báo lỗi | None) và không raise.
 # ---------------------------------------------------------------------------
-def _run_filter(code: str, cands: List[dict], stats: dict) -> Tuple[List[dict], Optional[str]]:
+def _run_filter(code: str, cands: list[dict], stats: dict) -> tuple[list[dict], str | None]:
     """Tầng 2. Khi LLM lỗi: trả ứng viên thô theo fallback_candidates (Bandit đầy đủ, còn lại >= medium)."""
     if not cands:
         return [], None  # không có gì để lọc -> tiết kiệm một lời gọi
@@ -115,7 +119,7 @@ def _run_filter(code: str, cands: List[dict], stats: dict) -> Tuple[List[dict], 
     return [candidate_to_issue(c) for c in fallback_candidates(cands)], err
 
 
-def _run_gap(code: str, cands: List[dict], stats: dict) -> Tuple[List[dict], Optional[str]]:
+def _run_gap(code: str, cands: list[dict], stats: dict) -> tuple[list[dict], str | None]:
     """Tầng 3. Lỗi trùng ứng viên của công cụ (cùng CWE, chồng dòng) bị bỏ và tính vào merged_count."""
     try:
         result = llm_find_gaps(code)
@@ -132,7 +136,7 @@ def _run_gap(code: str, cands: List[dict], stats: dict) -> Tuple[List[dict], Opt
         return [], f"Tầng 3: {type(e).__name__}: {e}"
 
 
-def _run_single_pass(code: str, stats: dict) -> Tuple[List[dict], Optional[str]]:
+def _run_single_pass(code: str, stats: dict) -> tuple[list[dict], str | None]:
     """mode=llm: 1 lượt tự do, không công cụ, không giới hạn loại lỗi (mốc so sánh)."""
     try:
         result = llm_review(code, [], prompts.SYSTEM_PROMPT, prompts.build_review_prompt)
@@ -158,11 +162,11 @@ def review_code(code: str, mode: str = "hybrid") -> dict:
     """
     mode = normalize_mode(mode)
     stats = {"suppressed": 0, "rejected": 0, "dropped": 0, "merged": 0, "truncated": 0}
-    errors: List[str] = []
+    errors: list[str] = []
     counts = {"bandit": 0, "ruff": 0, "static": 0}
-    warnings: List[str] = []
-    cands: List[dict] = []
-    issues: List[dict] = []
+    warnings: list[str] = []
+    cands: list[dict] = []
+    issues: list[dict] = []
     llm_count = 0
 
     # --- Tầng 1

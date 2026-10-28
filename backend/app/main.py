@@ -9,7 +9,6 @@ Endpoints:
 """
 
 import logging
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -78,7 +77,7 @@ def sample():
 
 
 @app.post("/review", response_model=ReviewResponse)
-def review(payload: ReviewRequest, mode: Optional[ReviewMode] = None):
+def review(payload: ReviewRequest, mode: ReviewMode | None = None):
     """Review code. `mode` (bandit | tools | llm | filter | hybrid) có thể gửi trong body hoặc query (?mode=...).
 
     Query có độ ưu tiên cao hơn body để tiện đo đạc bằng script:

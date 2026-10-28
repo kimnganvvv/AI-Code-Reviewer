@@ -13,7 +13,6 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import List
 
 from .config import BANDIT_TIMEOUT
 
@@ -70,7 +69,7 @@ BANDIT_FIXES = {
 }
 
 
-def _bandit_cmd() -> List[str]:
+def _bandit_cmd() -> list[str]:
     exe = shutil.which("bandit")
     if exe:
         return [exe]
@@ -95,7 +94,7 @@ def _explanation(r: dict) -> str:
     return " | ".join(parts)
 
 
-def run_bandit(code: str) -> List[dict]:
+def run_bandit(code: str) -> list[dict]:
     if not code.strip():
         return []
 
@@ -122,7 +121,7 @@ def run_bandit(code: str) -> List[dict]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", raw, re.S)
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
         if not m:
             return []
         try:
@@ -130,7 +129,7 @@ def run_bandit(code: str) -> List[dict]:
         except json.JSONDecodeError:
             return []
 
-    out: List[dict] = []
+    out: list[dict] = []
     for res in data.get("results", []):
         tid = res.get("test_id", "")
         cwe, typ = BANDIT_CWE_MAP.get(tid, (None, "quality" if tid in _QUALITY_RULES else "security"))
