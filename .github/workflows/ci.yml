@@ -35,7 +35,17 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: python -m pip install -r backend/requirements.txt
+        run: |
+          python -m pip install -r backend/requirements.txt
+          python -m pip install matplotlib numpy  # for benchmark tests (plot_all)
+
+      - name: Lint
+        continue-on-error: true
+        run: python -m ruff check backend
+
+      - name: Type check
+        continue-on-error: true
+        run: python -m mypy backend/app
 
       - name: Run backend and benchmark tests
         run: python -m pytest backend/tests benchmark/tests
